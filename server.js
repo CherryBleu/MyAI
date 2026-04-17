@@ -100,6 +100,45 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  if (url.pathname === "/api/chat/stream" && method === "POST") {
+    const auth = checkAccessToken(req);
+    if (!auth.ok) return sendJson(res, req, auth.status, { error: auth.error });
+
+    const limit = checkRateLimit(auth.token);
+    if (!limit.ok) {
+      return sendJson(
+        res,
+        req,
+        429,
+        { error: `Rate limit exceeded. Retry in ${limit.retryAfterSec}s.` },
+        { "Retry-After": String(limit.retryAfterSec) }
+      );
+    }
+
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      return sendJson(res, req, 400, { error: err.message || "Invalid JSON body." });
+    }
+
+    const { model, messages, temperature } = body || {};
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return sendJson(res, req, 400, { error: "messages is required and must be a non-empty array." });
+    }
+    if (!model || typeof model !== "string") {
+      return sendJson(res, req, 400, { error: "model is required and must be a string." });
+    }
+
+    const allowedModels = getAllowedModels();
+    if (allowedModels.length && !allowedModels.includes(model)) {
+      return sendJson(res, req, 400, { error: "model is not in allowlist." });
+    }
+
+    const provider = resolveProvider(body?.provider);
+    return streamChatResponse(res, req, { provider, body, model, messages, temperature });
+  }
+
   return serveStatic(req, res, url.pathname);
 });
 
@@ -128,6 +167,69 @@ function sendJson(res, req, status, data, extraHeaders = {}) {
     ...extraHeaders,
   });
   res.end(JSON.stringify(data));
+}
+
+function startSse(res, req) {
+  writeCors(res, req);
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+}
+
+function writeSseEvent(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+async function streamChatResponse(res, req, { provider, body, model, messages, temperature }) {
+  startSse(res, req);
+
+  const abortController = new AbortController();
+  const abortOnClose = () => abortController.abort(createAbortError());
+  req.on("aborted", abortOnClose);
+  req.on("close", abortOnClose);
+
+  try {
+    const streamed = await streamChatByProvider({
+      provider,
+      body,
+      model,
+      messages,
+      temperature,
+      signal: abortController.signal,
+      onDelta(delta) {
+        if (!delta) return;
+        writeSseEvent(res, "delta", { delta });
+      },
+    });
+
+    if (streamed.ok) {
+      writeSseEvent(res, "done", {
+        id: streamed.id || null,
+        provider,
+        model: streamed.model || model,
+        text: streamed.text || "",
+        usage: streamed.usage || null,
+      });
+    } else if (!abortController.signal.aborted) {
+      writeSseEvent(res, "error", {
+        error: streamed.error || "Upstream request failed.",
+        upstreamStatus: streamed.upstreamStatus || null,
+        detail: streamed.detail || undefined,
+      });
+    }
+  } catch (err) {
+    if (!abortController.signal.aborted) {
+      writeSseEvent(res, "error", { error: err?.message || "stream failed" });
+    }
+  } finally {
+    req.off("aborted", abortOnClose);
+    req.off("close", abortOnClose);
+    res.end();
+  }
 }
 
 function resolveProvider(input) {
@@ -334,6 +436,124 @@ async function forwardChatByProvider({ provider, body, model, messages, temperat
     return forwardGeminiChat({ body, model, messages, temperature });
   }
   return forwardOpenAICompatibleChat({ body, model, messages, temperature });
+}
+
+async function streamChatByProvider({ provider, body, model, messages, temperature, signal, onDelta }) {
+  if (provider === "openai_compatible") {
+    return streamOpenAICompatibleChat({ body, model, messages, temperature, signal, onDelta });
+  }
+  return streamChatByChunks({ provider, body, model, messages, temperature, signal, onDelta });
+}
+
+async function streamOpenAICompatibleChat({ body, model, messages, temperature, signal, onDelta }) {
+  const cfg = getOpenAICompatibleConfig();
+  if (!cfg.ok) return cfg;
+
+  const upstreamUrl = buildUrl(cfg.baseUrl, cfg.chatPath);
+  const payload = {
+    ...(body && typeof body === "object" ? body : {}),
+    model,
+    messages,
+    stream: true,
+  };
+  delete payload.provider;
+  if (typeof temperature === "number") payload.temperature = temperature;
+
+  let upstreamResp;
+  try {
+    upstreamResp = await fetch(upstreamUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...buildOpenAICompatibleAuthHeaders(cfg),
+      },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (err) {
+    if (signal?.aborted) throw createAbortError();
+    return { ok: false, error: "Failed to connect upstream model service." };
+  }
+
+  if (!upstreamResp.ok) {
+    const text = await upstreamResp.text();
+    return {
+      ok: false,
+      error: "Upstream request failed.",
+      upstreamStatus: upstreamResp.status,
+      detail: safeUpstreamError(text),
+    };
+  }
+
+  const contentType = upstreamResp.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const parsed = await readUpstreamJson(upstreamResp);
+    if (!parsed.ok) return parsed;
+    const assistant = normalizeAssistantFromUpstream(parsed.data);
+    if (!assistant) {
+      return { ok: false, error: "No assistant content from upstream." };
+    }
+    for (const chunk of chunkText(assistant.text || "", 24)) {
+      if (signal?.aborted) throw createAbortError();
+      await onDelta(chunk);
+      await sleep(16);
+    }
+    return {
+      ok: true,
+      id: parsed.data?.id || null,
+      model: parsed.data?.model || model,
+      text: assistant.text || "",
+      usage: parsed.data?.usage || null,
+    };
+  }
+
+  let id = null;
+  let finalModel = model;
+  let usage = null;
+  let text = "";
+
+  await readSseStream(upstreamResp.body, async (event) => {
+    if (!event?.data) return;
+    if (event.data === "[DONE]") return;
+
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+
+    id = data.id || id;
+    finalModel = data.model || finalModel;
+    usage = data.usage || usage;
+
+    const delta = extractOpenAIStreamText(data);
+    if (!delta) return;
+    text += delta;
+    await onDelta(delta);
+  }, signal);
+
+  return { ok: true, id, model: finalModel, text, usage };
+}
+
+async function streamChatByChunks({ provider, body, model, messages, temperature, signal, onDelta }) {
+  const forwarded = await forwardChatByProvider({ provider, body, model, messages, temperature });
+  if (!forwarded.ok) return forwarded;
+
+  const text = forwarded.assistant?.text || "";
+  for (const chunk of chunkText(text, 24)) {
+    if (signal?.aborted) throw createAbortError();
+    await onDelta(chunk);
+    await sleep(16);
+  }
+
+  return {
+    ok: true,
+    id: forwarded.id || null,
+    model: forwarded.model || model,
+    text,
+    usage: forwarded.usage || null,
+  };
 }
 
 async function forwardOpenAICompatibleChat({ body, model, messages, temperature }) {
@@ -760,6 +980,101 @@ function buildOpenAICompatibleAuthHeaders(cfg) {
     return { [headerName]: `${prefix}${cfg.apiKey}`.trim() };
   }
   return { [headerName]: cfg.apiKey };
+}
+
+async function readSseStream(stream, onEvent, signal) {
+  if (!stream) return;
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    if (signal?.aborted) throw createAbortError();
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let boundary = findSseBoundary(buffer);
+    while (boundary !== -1) {
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + (buffer.slice(boundary, boundary + 4).startsWith("\r\n\r\n") ? 4 : 2));
+      const parsed = parseSseEvent(rawEvent);
+      if (parsed) await onEvent(parsed);
+      boundary = findSseBoundary(buffer);
+    }
+  }
+
+  if (buffer.trim()) {
+    const parsed = parseSseEvent(buffer);
+    if (parsed) await onEvent(parsed);
+  }
+}
+
+function parseSseEvent(rawEvent) {
+  const lines = String(rawEvent || "")
+    .split(/\r?\n/)
+    .filter(Boolean);
+  if (!lines.length) return null;
+  let event = "message";
+  const dataLines = [];
+  for (const line of lines) {
+    if (line.startsWith("event:")) {
+      event = line.slice(6).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  }
+  if (!dataLines.length) return null;
+  return { event, data: dataLines.join("\n") };
+}
+
+function findSseBoundary(buffer) {
+  const rn = buffer.indexOf("\r\n\r\n");
+  const nn = buffer.indexOf("\n\n");
+  if (rn === -1) return nn;
+  if (nn === -1) return rn;
+  return Math.min(rn, nn);
+}
+
+function extractOpenAIStreamText(data) {
+  if (data?.type === "response.output_text.delta" && typeof data.delta === "string") {
+    return data.delta;
+  }
+
+  const choices = Array.isArray(data?.choices) ? data.choices : [];
+  let text = "";
+  for (const choice of choices) {
+    const content = choice?.delta?.content;
+    if (typeof content === "string") {
+      text += content;
+      continue;
+    }
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        if (typeof part?.text === "string") text += part.text;
+      }
+    }
+  }
+  return text;
+}
+
+function chunkText(text, size = 24) {
+  const input = String(text || "");
+  if (!input) return [];
+  const chunks = [];
+  for (let i = 0; i < input.length; i += size) {
+    chunks.push(input.slice(i, i + size));
+  }
+  return chunks;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createAbortError() {
+  const err = new Error("aborted");
+  err.name = "AbortError";
+  return err;
 }
 
 function resolveGeminiGeneratePath(template, model) {

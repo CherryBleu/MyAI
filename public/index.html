@@ -537,9 +537,56 @@
         z-index: 35;
       }
 
-      textarea {
-        min-height: 92px;
-        resize: vertical;
+      .composer-bar {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .composer-extra {
+        display: none;
+      }
+
+      .composer-extra.has-files {
+        display: grid;
+      }
+
+      .circle-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 999px;
+        border: 0;
+        display: inline-grid;
+        place-items: center;
+        font-size: 18px;
+        color: #eef4ff;
+      }
+
+      .circle-btn.subtle {
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .circle-btn.primary {
+        background: linear-gradient(135deg, #748dff, #8cb8ff);
+      }
+
+      .circle-btn.danger {
+        background: rgba(255, 110, 110, 0.18);
+        color: #ffd0d0;
+      }
+
+      #input {
+        min-width: 0;
+        min-height: 24px;
+        height: 24px;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        padding: 0 2px;
+        resize: none;
+        font-size: 18px;
+        line-height: 1.2;
       }
 
       .attach-head {
@@ -696,6 +743,97 @@
         color: #fbfdff;
       }
 
+      .thinking {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: rgba(232, 238, 255, 0.88);
+      }
+
+      .spinner-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #dce7ff;
+        box-shadow: 0 0 0 0 rgba(220, 231, 255, 0.55);
+        animation: pulseDot 1s ease infinite;
+      }
+
+      .md-block {
+        display: grid;
+        gap: 10px;
+      }
+
+      .md-block > :first-child {
+        margin-top: 0;
+      }
+
+      .md-block > :last-child {
+        margin-bottom: 0;
+      }
+
+      .md-block p,
+      .md-block ul,
+      .md-block ol,
+      .md-block blockquote,
+      .md-block pre,
+      .md-block h1,
+      .md-block h2,
+      .md-block h3 {
+        margin: 0;
+      }
+
+      .md-block ul,
+      .md-block ol {
+        padding-left: 20px;
+      }
+
+      .md-block blockquote {
+        border-left: 3px solid rgba(148, 172, 255, 0.42);
+        padding-left: 12px;
+        color: rgba(232, 238, 255, 0.8);
+      }
+
+      .md-block code {
+        font-family: "Consolas", "SFMono-Regular", monospace;
+        font-size: 0.92em;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        padding: 2px 6px;
+      }
+
+      .md-block pre {
+        overflow: auto;
+        background: rgba(3, 9, 22, 0.52);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 14px;
+        padding: 12px;
+      }
+
+      .md-block pre code {
+        background: transparent;
+        padding: 0;
+      }
+
+      .md-block a {
+        color: #b8ceff;
+      }
+
+      @keyframes pulseDot {
+        0% {
+          transform: scale(0.92);
+          box-shadow: 0 0 0 0 rgba(220, 231, 255, 0.42);
+        }
+        70% {
+          transform: scale(1);
+          box-shadow: 0 0 0 12px rgba(220, 231, 255, 0);
+        }
+        100% {
+          transform: scale(0.92);
+          box-shadow: 0 0 0 0 rgba(220, 231, 255, 0);
+        }
+      }
+
       body.app-ready {
         color: #eaf0ff;
         background:
@@ -793,22 +931,16 @@
         display: none;
       }
 
-      body.app-ready .composer textarea {
-        min-height: 28px;
-        max-height: 180px;
-        background: transparent;
-        border: 0;
-        box-shadow: none;
-        padding: 0 2px;
-        resize: none;
-      }
-
       body.app-ready .attach-head label {
         color: rgba(232, 238, 255, 0.58);
       }
 
       body.app-ready .msg-media img {
         border-color: rgba(255, 255, 255, 0.08);
+      }
+
+      body.app-ready #input {
+        background: transparent;
       }
 
       .send-btn:active {
@@ -902,6 +1034,15 @@
           bottom: calc(10px + env(safe-area-inset-bottom));
           border-radius: 24px;
           padding: 12px 12px 14px;
+        }
+
+        .composer-bar {
+          gap: 8px;
+          grid-template-columns: auto minmax(0, 1fr) auto auto;
+        }
+
+        #input {
+          font-size: 16px;
         }
       }
 
@@ -1062,6 +1203,8 @@
         availableModels: [],
         conversations: [],
         activeConversationId: "",
+        currentStreamController: null,
+        streamingMessageId: "",
       };
 
       const els = {
@@ -1083,11 +1226,13 @@
         autoModelNotice: document.getElementById("autoModelNotice"),
         chat: document.getElementById("chat"),
         input: document.getElementById("input"),
+        composerExtra: document.querySelector(".composer-extra"),
         pickFilesBtn: document.getElementById("pickFilesBtn"),
         fileInput: document.getElementById("fileInput"),
         attachList: document.getElementById("attachList"),
         attachHint: document.getElementById("attachHint"),
         sendBtn: document.getElementById("sendBtn"),
+        stopBtn: document.getElementById("stopBtn"),
         clearBtn: document.getElementById("clearBtn"),
         status: document.getElementById("status"),
       };
@@ -1136,6 +1281,7 @@
         });
 
         els.sendBtn.addEventListener("click", onSend);
+        els.stopBtn.addEventListener("click", onStopStream);
         els.newChatBtn.addEventListener("click", onNewChat);
         els.clearBtn.addEventListener("click", onClear);
         els.pickFilesBtn.addEventListener("click", () => els.fileInput.click());
@@ -1173,7 +1319,7 @@
         });
 
         els.input.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
+          if (e.key === "Enter") {
             e.preventDefault();
             onSend();
           }
@@ -1483,6 +1629,15 @@
         };
         state.messages.push(userMessage);
 
+        const placeholder = {
+          id: createMessageId(),
+          role: "assistant",
+          content: "",
+          streaming: true,
+        };
+        state.streamingMessageId = placeholder.id;
+        state.messages.push(placeholder);
+
         els.input.value = "";
         state.pendingFiles = [];
         els.fileInput.value = "";
@@ -1491,41 +1646,54 @@
         renderMessages();
 
         state.loading = true;
-        els.sendBtn.disabled = true;
-        els.sendBtn.classList.add("loading");
+        state.currentStreamController = new AbortController();
+        setComposerLoading(true);
         setStatus("思考中...");
 
         try {
-          const resp = await fetch(`${apiBase()}/api/chat`, {
+          const resp = await fetch(`${apiBase()}/api/chat/stream`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               ...tokenHeaders(),
             },
+            signal: state.currentStreamController.signal,
             body: JSON.stringify({
               provider,
               model: modelToUse,
-              messages: state.messages,
+              messages: state.messages.filter((msg) => !msg.streaming).map(stripMessageMeta),
             }),
           });
 
-          const data = await resp.json();
-          if (!resp.ok) throw new Error(data.error || "请求失败");
-
-          state.messages.push(normalizeAssistantMessage(data));
-          saveMessages();
-          renderMessages();
+          await consumeChatStream(resp, placeholder.id);
+          finalizeStreamMessage(placeholder.id);
           setStatus("完成");
         } catch (e) {
-          setStatus(`发送失败：${e.message}`, true);
+          if (e.name === "AbortError") {
+            finalizeStreamMessage(placeholder.id);
+            setStatus("已停止生成。");
+          } else {
+            removeMessageById(placeholder.id);
+            renderMessages();
+            setStatus(`发送失败：${e.message}`, true);
+          }
         } finally {
           state.loading = false;
-          els.sendBtn.disabled = false;
-          els.sendBtn.classList.remove("loading");
+          state.currentStreamController = null;
+          state.streamingMessageId = "";
+          setComposerLoading(false);
+          saveMessages();
+        }
+      }
+
+      function onStopStream() {
+        if (state.currentStreamController) {
+          state.currentStreamController.abort();
         }
       }
 
       function onClear() {
+        onStopStream();
         state.messages = [];
         state.pendingFiles = [];
         els.fileInput.value = "";
@@ -1537,6 +1705,7 @@
       }
 
       function onNewChat() {
+        onStopStream();
         const current = getActiveConversation();
         if (current) {
           current.messages = state.messages.slice(-MAX_MESSAGES_PER_CONVERSATION).map(compactMessage).filter(Boolean);
@@ -1566,6 +1735,7 @@
       }
 
       function onSwitchConversation(e) {
+        onStopStream();
         const btn = e.target.closest("button[data-conversation-id]");
         if (!btn) return;
         const id = btn.dataset.conversationId;
@@ -1603,6 +1773,13 @@
       function setStatus(text, isError = false) {
         els.status.textContent = text;
         els.status.classList.toggle("error", !!isError);
+      }
+
+      function setComposerLoading(loading) {
+        els.sendBtn.disabled = !!loading;
+        els.sendBtn.hidden = !!loading;
+        els.pickFilesBtn.disabled = !!loading;
+        els.stopBtn.hidden = !loading;
       }
 
       function setAutoModelNotice(text) {
@@ -1742,6 +1919,9 @@
       }
 
       function renderPendingFiles() {
+        const hasFiles = state.pendingFiles.length > 0;
+        const extra = els.composerExtra;
+        if (extra) extra.classList.toggle("has-files", hasFiles);
         els.attachList.innerHTML = "";
         els.attachHint.textContent = `单个文件不超过 ${formatBytes(MAX_FILE_SIZE)}，最多 ${MAX_FILE_COUNT} 个，总计不超过 ${formatBytes(MAX_TOTAL_SIZE)}。`;
         for (let i = 0; i < state.pendingFiles.length; i += 1) {
@@ -1831,7 +2011,7 @@
 
           const bubble = document.createElement("div");
           bubble.className = `msg ${roleClass}`;
-          renderMessageContent(bubble, msg.content);
+          renderMessageContent(bubble, msg.content, { role: roleClass, streaming: !!msg.streaming });
 
           if (roleClass === "user") {
             row.appendChild(bubble);
@@ -1847,39 +2027,45 @@
         els.chat.scrollTop = els.chat.scrollHeight;
       }
 
-      function renderMessageContent(container, content) {
+      function renderMessageContent(container, content, options = {}) {
+        const { role = "assistant", streaming = false } = options;
+        if (role === "assistant" && streaming && !flattenContentToText(content).trim()) {
+          appendThinking(container);
+          return;
+        }
+
         if (typeof content === "string") {
-          appendText(container, content);
+          appendText(container, content, role);
           return;
         }
 
         if (!Array.isArray(content)) {
-          appendText(container, stringifyUnknown(content));
+          appendText(container, stringifyUnknown(content), role);
           return;
         }
 
         if (!content.length) {
-          appendText(container, "(空消息)");
+          appendText(container, "(空消息)", role);
           return;
         }
 
         for (const part of content) {
-          appendPart(container, part);
+          appendPart(container, part, role);
         }
       }
 
-      function appendPart(container, part) {
+      function appendPart(container, part, role = "assistant") {
         if (typeof part === "string") {
-          appendText(container, part);
+          appendText(container, part, role);
           return;
         }
         if (!part || typeof part !== "object") {
-          appendText(container, stringifyUnknown(part));
+          appendText(container, stringifyUnknown(part), role);
           return;
         }
 
         if (part.type === "text" || part.type === "output_text" || typeof part.text === "string") {
-          appendText(container, part.text || "");
+          appendText(container, part.text || "", role);
           return;
         }
 
@@ -1899,13 +2085,29 @@
           return;
         }
 
-        appendText(container, stringifyUnknown(part));
+        appendText(container, stringifyUnknown(part), role);
       }
 
-      function appendText(container, text) {
+      function appendText(container, text, role = "assistant") {
+        if (role === "assistant") {
+          container.appendChild(renderMarkdownBlock(text || ""));
+          return;
+        }
         const line = document.createElement("div");
         line.textContent = text || "";
         container.appendChild(line);
+      }
+
+      function appendThinking(container) {
+        const wrap = document.createElement("div");
+        wrap.className = "thinking";
+        const dot = document.createElement("span");
+        dot.className = "spinner-dot";
+        const text = document.createElement("span");
+        text.textContent = "思考中...";
+        wrap.appendChild(dot);
+        wrap.appendChild(text);
+        container.appendChild(wrap);
       }
 
       function appendImage(container, url) {
@@ -2039,11 +2241,13 @@
       function normalizeAssistantMessage(data) {
         if (data?.message && typeof data.message === "object") {
           return {
+            id: createMessageId(),
             role: "assistant",
             content: normalizeMessageContent(data.message.content),
           };
         }
         return {
+          id: createMessageId(),
           role: "assistant",
           content: normalizeMessageContent(data?.content),
         };
@@ -2066,6 +2270,244 @@
         return String(content);
       }
 
+      function renderMarkdownBlock(text) {
+        const root = document.createElement("div");
+        root.className = "md-block";
+        const source = String(text || "");
+        const lines = source.replace(/\r/g, "").split("\n");
+        let i = 0;
+
+        while (i < lines.length) {
+          const line = lines[i];
+
+          if (!line.trim()) {
+            i += 1;
+            continue;
+          }
+
+          if (line.startsWith("```")) {
+            const lang = line.slice(3).trim();
+            const codeLines = [];
+            i += 1;
+            while (i < lines.length && !lines[i].startsWith("```")) {
+              codeLines.push(lines[i]);
+              i += 1;
+            }
+            if (i < lines.length) i += 1;
+            const pre = document.createElement("pre");
+            const code = document.createElement("code");
+            if (lang) code.dataset.lang = lang;
+            code.textContent = codeLines.join("\n");
+            pre.appendChild(code);
+            root.appendChild(pre);
+            continue;
+          }
+
+          if (/^#{1,3}\s+/.test(line)) {
+            const level = Math.min(3, line.match(/^#+/)[0].length);
+            const el = document.createElement(`h${level}`);
+            setInlineMarkdown(el, line.replace(/^#{1,3}\s+/, ""));
+            root.appendChild(el);
+            i += 1;
+            continue;
+          }
+
+          if (/^>\s?/.test(line)) {
+            const quote = document.createElement("blockquote");
+            const quoteLines = [];
+            while (i < lines.length && /^>\s?/.test(lines[i])) {
+              quoteLines.push(lines[i].replace(/^>\s?/, ""));
+              i += 1;
+            }
+            setInlineMarkdown(quote, quoteLines.join("\n"));
+            root.appendChild(quote);
+            continue;
+          }
+
+          if (/^[-*]\s+/.test(line)) {
+            const ul = document.createElement("ul");
+            while (i < lines.length && /^[-*]\s+/.test(lines[i])) {
+              const li = document.createElement("li");
+              setInlineMarkdown(li, lines[i].replace(/^[-*]\s+/, ""));
+              ul.appendChild(li);
+              i += 1;
+            }
+            root.appendChild(ul);
+            continue;
+          }
+
+          if (/^\d+\.\s+/.test(line)) {
+            const ol = document.createElement("ol");
+            while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
+              const li = document.createElement("li");
+              setInlineMarkdown(li, lines[i].replace(/^\d+\.\s+/, ""));
+              ol.appendChild(li);
+              i += 1;
+            }
+            root.appendChild(ol);
+            continue;
+          }
+
+          const paragraphLines = [];
+          while (i < lines.length && lines[i].trim() && !isMarkdownBlockStart(lines[i])) {
+            paragraphLines.push(lines[i]);
+            i += 1;
+          }
+          const p = document.createElement("p");
+          setInlineMarkdown(p, paragraphLines.join("\n"));
+          root.appendChild(p);
+        }
+
+        if (!root.childNodes.length) {
+          const p = document.createElement("p");
+          p.textContent = source;
+          root.appendChild(p);
+        }
+        return root;
+      }
+
+      function isMarkdownBlockStart(line) {
+        return /^```/.test(line) || /^#{1,3}\s+/.test(line) || /^>\s?/.test(line) || /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line);
+      }
+
+      function setInlineMarkdown(container, text) {
+        container.innerHTML = inlineMarkdownToHtml(text);
+      }
+
+      function inlineMarkdownToHtml(text) {
+        const escaped = escapeHtml(String(text || ""));
+        const withBreaks = escaped.replace(/\n/g, "<br>");
+        return withBreaks
+          .replace(/`([^`]+)`/g, "<code>$1</code>")
+          .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+          .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+          .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      }
+
+      function escapeHtml(text) {
+        return String(text || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function stripMessageMeta(msg) {
+        return {
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: normalizeMessageContent(msg.content),
+        };
+      }
+
+      function createMessageId() {
+        return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      }
+
+      function findMessageById(id) {
+        return state.messages.find((msg) => msg.id === id) || null;
+      }
+
+      function removeMessageById(id) {
+        const idx = state.messages.findIndex((msg) => msg.id === id);
+        if (idx >= 0) state.messages.splice(idx, 1);
+      }
+
+      function finalizeStreamMessage(id) {
+        const msg = findMessageById(id);
+        if (!msg) return;
+        msg.streaming = false;
+        msg.content = normalizeMessageContent(msg.content);
+        renderMessages();
+      }
+
+      function appendAssistantChunk(id, chunk) {
+        const msg = findMessageById(id);
+        if (!msg) return;
+        const nextText = `${flattenContentToText(msg.content)}${chunk || ""}`;
+        msg.content = nextText;
+        msg.streaming = true;
+        renderMessages();
+      }
+
+      async function consumeChatStream(resp, messageId) {
+        if (!resp.ok) {
+          let data = {};
+          try {
+            data = await resp.json();
+          } catch {}
+          throw new Error(data.error || "请求失败");
+        }
+        if (!resp.body) throw new Error("浏览器不支持流式响应");
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let boundary = findSseBoundary(buffer);
+          while (boundary !== -1) {
+            const rawEvent = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + (buffer.slice(boundary, boundary + 4).startsWith("\r\n\r\n") ? 4 : 2));
+            handleSseEvent(rawEvent, messageId);
+            boundary = findSseBoundary(buffer);
+          }
+        }
+
+        if (buffer.trim()) {
+          handleSseEvent(buffer, messageId);
+        }
+      }
+
+      function handleSseEvent(rawEvent, messageId) {
+        const lines = String(rawEvent || "")
+          .split(/\r?\n/)
+          .filter(Boolean);
+        let eventName = "message";
+        const dataLines = [];
+        for (const line of lines) {
+          if (line.startsWith("event:")) {
+            eventName = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            dataLines.push(line.slice(5).trimStart());
+          }
+        }
+        if (!dataLines.length) return;
+        const payloadText = dataLines.join("\n");
+        let payload = {};
+        try {
+          payload = JSON.parse(payloadText);
+        } catch {
+          payload = { text: payloadText };
+        }
+
+        if (eventName === "delta") {
+          appendAssistantChunk(messageId, payload.delta || "");
+          return;
+        }
+        if (eventName === "done") {
+          const msg = findMessageById(messageId);
+          if (msg && typeof payload.text === "string" && payload.text) {
+            msg.content = payload.text;
+          }
+          return;
+        }
+        if (eventName === "error") {
+          throw new Error(payload.error || "流式响应失败");
+        }
+      }
+
+      function findSseBoundary(buffer) {
+        const rn = buffer.indexOf("\r\n\r\n");
+        const nn = buffer.indexOf("\n\n");
+        if (rn === -1) return nn;
+        if (nn === -1) return rn;
+        return Math.min(rn, nn);
+      }
+
       function saveMessages() {
         const active = getActiveConversation();
         if (!active) return;
@@ -2081,6 +2523,7 @@
 
       function compactMessage(msg) {
         if (!msg || typeof msg !== "object") return null;
+        if (msg.streaming) return null;
         return {
           role: msg.role === "assistant" ? "assistant" : "user",
           content: compactContent(msg.content),

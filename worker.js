@@ -83,6 +83,45 @@ export default {
       );
     }
 
+    if (url.pathname === "/api/chat/stream" && request.method === "POST") {
+      const auth = checkAccessToken(request, env);
+      if (!auth.ok) return json({ error: auth.error }, auth.status, request, env);
+
+      const limit = await checkRateLimit(auth.token, env);
+      if (!limit.ok) {
+        return json(
+          { error: `Rate limit exceeded. Retry in ${limit.retryAfterSec}s.` },
+          429,
+          request,
+          env,
+          { "Retry-After": String(limit.retryAfterSec) }
+        );
+      }
+
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "Invalid JSON body." }, 400, request, env);
+      }
+
+      const { model, messages, temperature } = body ?? {};
+      if (!Array.isArray(messages) || messages.length === 0) {
+        return json({ error: "messages is required and must be a non-empty array." }, 400, request, env);
+      }
+      if (!model || typeof model !== "string") {
+        return json({ error: "model is required and must be a string." }, 400, request, env);
+      }
+
+      const allowedModels = getAllowedModels(env);
+      if (allowedModels.length && !allowedModels.includes(model)) {
+        return json({ error: "model is not in allowlist." }, 400, request, env);
+      }
+
+      const provider = resolveProvider(body?.provider, env);
+      return streamChatResponse(request, env, { provider, body, model, messages, temperature });
+    }
+
     return env.ASSETS.fetch(request);
   },
 };
@@ -110,6 +149,70 @@ function getAllowedModels(env) {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function sseHeaders(request, env, extraHeaders = {}) {
+  return {
+    ...corsHeaders(request, env),
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    ...extraHeaders,
+  };
+}
+
+function encodeSseEvent(event, data) {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+function streamChatResponse(request, env, { provider, body, model, messages, temperature }) {
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event, data) => controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
+      try {
+        const streamed = await streamChatByProvider({
+          provider,
+          body,
+          model,
+          messages,
+          temperature,
+          signal: request.signal,
+          async onDelta(delta) {
+            if (!delta) return;
+            send("delta", { delta });
+          },
+        });
+
+        if (streamed.ok) {
+          send("done", {
+            id: streamed.id || null,
+            provider,
+            model: streamed.model || model,
+            text: streamed.text || "",
+            usage: streamed.usage || null,
+          });
+        } else if (!request.signal.aborted) {
+          send("error", {
+            error: streamed.error || "Upstream request failed.",
+            upstreamStatus: streamed.upstreamStatus || null,
+            detail: streamed.detail || undefined,
+          });
+        }
+      } catch (err) {
+        if (!request.signal.aborted) {
+          send("error", { error: err?.message || "stream failed" });
+        }
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: sseHeaders(request, env),
+  });
 }
 
 async function getModelInfo(provider, env) {
@@ -292,6 +395,124 @@ async function forwardChatByProvider({ provider, body, model, messages, temperat
     return forwardGeminiChat({ body, model, messages, temperature, env });
   }
   return forwardOpenAICompatibleChat({ body, model, messages, temperature, env });
+}
+
+async function streamChatByProvider({ provider, body, model, messages, temperature, env, signal, onDelta }) {
+  if (provider === "openai_compatible") {
+    return streamOpenAICompatibleChat({ body, model, messages, temperature, env, signal, onDelta });
+  }
+  return streamChatByChunks({ provider, body, model, messages, temperature, env, signal, onDelta });
+}
+
+async function streamOpenAICompatibleChat({ body, model, messages, temperature, env, signal, onDelta }) {
+  const cfg = getOpenAICompatibleConfig(env);
+  if (!cfg.ok) return cfg;
+
+  const upstreamUrl = buildUrl(cfg.baseUrl, cfg.chatPath);
+  const payload = {
+    ...(body && typeof body === "object" ? body : {}),
+    model,
+    messages,
+    stream: true,
+  };
+  delete payload.provider;
+  if (typeof temperature === "number") payload.temperature = temperature;
+
+  let upstreamResp;
+  try {
+    upstreamResp = await fetch(upstreamUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...buildOpenAICompatibleAuthHeaders(cfg),
+      },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (err) {
+    if (signal?.aborted) throw createAbortError();
+    return { ok: false, error: "Failed to connect upstream model service." };
+  }
+
+  if (!upstreamResp.ok) {
+    const text = await upstreamResp.text();
+    return {
+      ok: false,
+      error: "Upstream request failed.",
+      upstreamStatus: upstreamResp.status,
+      detail: safeUpstreamError(text),
+    };
+  }
+
+  const contentType = upstreamResp.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const parsed = await readUpstreamJson(upstreamResp);
+    if (!parsed.ok) return parsed;
+    const assistant = normalizeAssistantFromUpstream(parsed.data);
+    if (!assistant) {
+      return { ok: false, error: "No assistant content from upstream." };
+    }
+    for (const chunk of chunkText(assistant.text || "", 24)) {
+      if (signal?.aborted) throw createAbortError();
+      await onDelta(chunk);
+      await sleep(16);
+    }
+    return {
+      ok: true,
+      id: parsed.data?.id || null,
+      model: parsed.data?.model || model,
+      text: assistant.text || "",
+      usage: parsed.data?.usage || null,
+    };
+  }
+
+  let id = null;
+  let finalModel = model;
+  let usage = null;
+  let text = "";
+
+  await readSseStream(upstreamResp.body, async (event) => {
+    if (!event?.data) return;
+    if (event.data === "[DONE]") return;
+
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+
+    id = data.id || id;
+    finalModel = data.model || finalModel;
+    usage = data.usage || usage;
+
+    const delta = extractOpenAIStreamText(data);
+    if (!delta) return;
+    text += delta;
+    await onDelta(delta);
+  }, signal);
+
+  return { ok: true, id, model: finalModel, text, usage };
+}
+
+async function streamChatByChunks({ provider, body, model, messages, temperature, env, signal, onDelta }) {
+  const forwarded = await forwardChatByProvider({ provider, body, model, messages, temperature, env });
+  if (!forwarded.ok) return forwarded;
+
+  const text = forwarded.assistant?.text || "";
+  for (const chunk of chunkText(text, 24)) {
+    if (signal?.aborted) throw createAbortError();
+    await onDelta(chunk);
+    await sleep(16);
+  }
+
+  return {
+    ok: true,
+    id: forwarded.id || null,
+    model: forwarded.model || model,
+    text,
+    usage: forwarded.usage || null,
+  };
 }
 
 async function forwardOpenAICompatibleChat({ body, model, messages, temperature, env }) {
@@ -718,6 +939,101 @@ function buildOpenAICompatibleAuthHeaders(cfg) {
     return { [headerName]: `${prefix}${cfg.apiKey}`.trim() };
   }
   return { [headerName]: cfg.apiKey };
+}
+
+async function readSseStream(stream, onEvent, signal) {
+  if (!stream) return;
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    if (signal?.aborted) throw createAbortError();
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let boundary = findSseBoundary(buffer);
+    while (boundary !== -1) {
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + (buffer.slice(boundary, boundary + 4).startsWith("\r\n\r\n") ? 4 : 2));
+      const parsed = parseSseEvent(rawEvent);
+      if (parsed) await onEvent(parsed);
+      boundary = findSseBoundary(buffer);
+    }
+  }
+
+  if (buffer.trim()) {
+    const parsed = parseSseEvent(buffer);
+    if (parsed) await onEvent(parsed);
+  }
+}
+
+function parseSseEvent(rawEvent) {
+  const lines = String(rawEvent || "")
+    .split(/\r?\n/)
+    .filter(Boolean);
+  if (!lines.length) return null;
+  let event = "message";
+  const dataLines = [];
+  for (const line of lines) {
+    if (line.startsWith("event:")) {
+      event = line.slice(6).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  }
+  if (!dataLines.length) return null;
+  return { event, data: dataLines.join("\n") };
+}
+
+function findSseBoundary(buffer) {
+  const rn = buffer.indexOf("\r\n\r\n");
+  const nn = buffer.indexOf("\n\n");
+  if (rn === -1) return nn;
+  if (nn === -1) return rn;
+  return Math.min(rn, nn);
+}
+
+function extractOpenAIStreamText(data) {
+  if (data?.type === "response.output_text.delta" && typeof data.delta === "string") {
+    return data.delta;
+  }
+
+  const choices = Array.isArray(data?.choices) ? data.choices : [];
+  let text = "";
+  for (const choice of choices) {
+    const content = choice?.delta?.content;
+    if (typeof content === "string") {
+      text += content;
+      continue;
+    }
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        if (typeof part?.text === "string") text += part.text;
+      }
+    }
+  }
+  return text;
+}
+
+function chunkText(text, size = 24) {
+  const input = String(text || "");
+  if (!input) return [];
+  const chunks = [];
+  for (let i = 0; i < input.length; i += size) {
+    chunks.push(input.slice(i, i + size));
+  }
+  return chunks;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createAbortError() {
+  const err = new Error("aborted");
+  err.name = "AbortError";
+  return err;
 }
 
 function resolveGeminiGeneratePath(template, model) {
