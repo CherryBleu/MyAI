@@ -331,6 +331,87 @@
         gap: 8px;
       }
 
+      .session-line {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 14px;
+        padding: 10px 12px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .session-copy {
+        min-width: 0;
+      }
+
+      .session-title {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .session-sub {
+        font-size: 12px;
+        color: rgba(232, 238, 255, 0.62);
+      }
+
+      .recommend-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .recommend-item {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 14px;
+        padding: 10px 12px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .recommend-main {
+        min-width: 0;
+        display: grid;
+        gap: 4px;
+      }
+
+      .recommend-top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .recommend-vendor {
+        font-size: 11px;
+        border-radius: 999px;
+        padding: 2px 8px;
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(232, 238, 255, 0.88);
+      }
+
+      .recommend-model {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .recommend-note {
+        font-size: 12px;
+        color: rgba(232, 238, 255, 0.7);
+      }
+
+      .mini-btn {
+        border: 0;
+        border-radius: 999px;
+        padding: 8px 12px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #eef4ff;
+        font-size: 12px;
+      }
+
       .history-list {
         display: grid;
         gap: 8px;
@@ -496,19 +577,34 @@
         word-break: break-word;
         animation: fadeUp 0.2s ease;
         color: #eef4ff;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
       }
 
-      .assistant {
+      .msg.assistant {
         background: transparent;
         border-color: transparent;
         padding-left: 4px;
         padding-right: 4px;
       }
 
-      .user {
+      .msg.user {
+        width: fit-content;
+        min-width: 92px;
+        margin-left: auto;
         background: rgba(87, 103, 160, 0.34);
         border-color: rgba(168, 186, 255, 0.14);
         box-shadow: 0 12px 36px rgba(5, 9, 20, 0.28);
+        max-width: min(520px, 56%);
+        border-radius: 22px 22px 10px 22px;
+        background: linear-gradient(180deg, rgba(87, 103, 160, 0.46), rgba(74, 92, 149, 0.3));
+        border-color: rgba(182, 198, 255, 0.12);
+        padding: 14px 16px;
+      }
+
+      .user-text {
+        white-space: pre-wrap;
       }
 
       .msg-empty {
@@ -1016,6 +1112,10 @@
           max-width: 88%;
         }
 
+        .msg.user {
+          max-width: min(78vw, 420px);
+        }
+
         .chat-empty {
           min-height: calc(100dvh - 320px);
           padding: 0 4px;
@@ -1108,25 +1208,26 @@
       <section class="settings collapsed" id="settingsPanel">
         <div class="grid">
           <div class="row">
-            <label for="apiBase">接口地址（默认当前域名）</label>
-            <input id="apiBase" placeholder="https://your-domain.example" />
+            <label>当前登录</label>
+            <div class="session-line">
+              <div class="session-copy">
+                <div class="session-title">已通过 Token 验证</div>
+                <div class="session-sub">如需更换 token，请先退出后重新进入。</div>
+              </div>
+              <button class="mini-btn" id="logoutBtn" type="button">退出</button>
+            </div>
           </div>
           <div class="row">
-            <label for="token">访问口令（不是上游 API Key）</label>
-            <input id="token" type="password" placeholder="向你领取的口令" />
-          </div>
-          <div class="row">
-            <label for="provider">上游提供商</label>
+            <label for="provider">模型来源</label>
             <select id="provider">
-              <option value="openai_compatible">OpenAI 兼容</option>
-              <option value="anthropic">Anthropic 原生</option>
-              <option value="gemini">Gemini 原生</option>
+              <option value="openai_compatible">通用模型池</option>
+              <option value="gemini">Gemini</option>
             </select>
           </div>
         </div>
         <div class="row">
           <label for="model">模型</label>
-          <input id="model" placeholder="例如：qwen-plus / claude-3-7-sonnet" />
+          <input id="model" placeholder="例如：gpt-5.4 / claude-opus-4-7 / qwen3-max" />
           <div class="hint" id="modelHint">可手动输入模型名，也可直接点下方表格选择。</div>
           <div class="model-table-wrap">
             <table class="model-table">
@@ -1145,6 +1246,13 @@
             </table>
           </div>
           <div class="hint" id="autoModelNotice"></div>
+        </div>
+        <div class="row">
+          <div class="section-head">
+            <label>模型推荐</label>
+          </div>
+          <div class="recommend-list" id="recommendList"></div>
+          <div class="hint" id="recommendHint">根据当前提供商展示推荐模型，点击即可填入。</div>
         </div>
         <div class="row">
           <div class="section-head">
@@ -1195,6 +1303,17 @@
       const COOKIE_MAX_BYTES = 3400;
       const MAX_CONVERSATION_COUNT = 8;
       const MAX_MESSAGES_PER_CONVERSATION = 24;
+      const RECOMMENDED_MODELS = [
+        { provider: "openai_compatible", vendor: "OpenAI", model: "gpt-5.4", note: "综合能力最稳，复杂推理、代码和多模态都适合作为默认首选" },
+        { provider: "openai_compatible", vendor: "Anthropic", model: "claude-sonnet-4-6", note: "日常主力很均衡，写作、代码和 Agent 任务体验都好" },
+        { provider: "openai_compatible", vendor: "Anthropic", model: "claude-opus-4-7", note: "更偏重高难度推理、长上下文和复杂规划任务" },
+        { provider: "openai_compatible", vendor: "DeepSeek", model: "deepseek-reasoner", note: "推理性价比高，适合分析题、复杂问答和链路拆解" },
+        { provider: "openai_compatible", vendor: "DeepSeek", model: "deepseek-chat", note: "通用对话和代码表现也很强，通常是更省成本的常用档" },
+        { provider: "openai_compatible", vendor: "Qwen", model: "qwen3-max", note: "阿里系当前更值得优先试的高端主力，适合复杂文本与代码" },
+        { provider: "openai_compatible", vendor: "Qwen", model: "qwen3.6-plus", note: "多模态能力更完整，图片和视频相关任务更合适" },
+        { provider: "gemini", vendor: "Google", model: "gemini-3.1-pro-preview", note: "Gemini 当前更强的旗舰预览线，适合复杂推理与长上下文" },
+        { provider: "gemini", vendor: "Google", model: "gemini-2.5-pro", note: "稳定主力版本，兼顾综合能力和可用性" },
+      ];
 
       const state = {
         messages: [],
@@ -1205,6 +1324,7 @@
         activeConversationId: "",
         currentStreamController: null,
         streamingMessageId: "",
+        accessToken: "",
       };
 
       const els = {
@@ -1215,15 +1335,16 @@
         authError: document.getElementById("authError"),
         settingsPanel: document.getElementById("settingsPanel"),
         settingsToggle: document.getElementById("settingsToggle"),
+        logoutBtn: document.getElementById("logoutBtn"),
         newChatBtn: document.getElementById("newChatBtn"),
         historyList: document.getElementById("historyList"),
-        apiBase: document.getElementById("apiBase"),
-        token: document.getElementById("token"),
         provider: document.getElementById("provider"),
         model: document.getElementById("model"),
         modelTableBody: document.getElementById("modelTableBody"),
         modelHint: document.getElementById("modelHint"),
         autoModelNotice: document.getElementById("autoModelNotice"),
+        recommendList: document.getElementById("recommendList"),
+        recommendHint: document.getElementById("recommendHint"),
         chat: document.getElementById("chat"),
         input: document.getElementById("input"),
         composerExtra: document.querySelector(".composer-extra"),
@@ -1240,8 +1361,6 @@
       init();
 
       async function init() {
-        els.apiBase.value = localStorage.getItem("myai_api_base") || "";
-        els.token.value = "";
         els.provider.value = normalizeProvider(localStorage.getItem("myai_provider") || "openai_compatible");
         els.model.value = localStorage.getItem("myai_model") || "";
 
@@ -1257,6 +1376,7 @@
         renderMessages();
         renderHistoryList();
         renderModelTable();
+        renderRecommendedModels();
         renderPendingFiles();
 
         if ("serviceWorker" in navigator) {
@@ -1282,6 +1402,7 @@
 
         els.sendBtn.addEventListener("click", onSend);
         els.stopBtn.addEventListener("click", onStopStream);
+        els.logoutBtn.addEventListener("click", onLogout);
         els.newChatBtn.addEventListener("click", onNewChat);
         els.clearBtn.addEventListener("click", onClear);
         els.pickFilesBtn.addEventListener("click", () => els.fileInput.click());
@@ -1289,26 +1410,14 @@
         els.attachList.addEventListener("click", onRemovePendingFile);
         els.historyList.addEventListener("click", onSwitchConversation);
         els.modelTableBody.addEventListener("click", onPickModelFromTable);
-
-        els.apiBase.addEventListener("change", () => {
-          localStorage.setItem("myai_api_base", els.apiBase.value.trim());
-          if (isUnlocked()) loadModels();
-        });
-
-        els.token.addEventListener("change", () => {
-          els.authToken.value = els.token.value.trim();
-          if (!els.token.value.trim()) {
-            lockApp("token 为空，请重新输入。");
-            return;
-          }
-          if (isUnlocked()) loadModels();
-        });
+        els.recommendList.addEventListener("click", onPickRecommendedModel);
 
         els.provider.addEventListener("change", () => {
           const provider = normalizeProvider(els.provider.value);
           els.provider.value = provider;
           localStorage.setItem("myai_provider", provider);
           setAutoModelNotice("");
+          renderRecommendedModels();
           if (isUnlocked()) loadModels();
         });
 
@@ -1340,7 +1449,8 @@
 
         try {
           await verifyAccessToken(token);
-          els.token.value = token;
+          state.accessToken = token;
+          els.authToken.value = "";
           unlockApp();
           await loadModels();
           setStatus("口令验证成功。");
@@ -1356,10 +1466,6 @@
         }
       }
 
-      function apiBase() {
-        return (els.apiBase.value || "").trim() || location.origin;
-      }
-
       function isUnlocked() {
         return els.authGate.hidden;
       }
@@ -1371,6 +1477,7 @@
         els.appShell.classList.add("app-hidden");
         els.authGate.hidden = false;
         els.authError.textContent = message || "";
+        requestAnimationFrame(() => els.authToken.focus());
       }
 
       function unlockApp() {
@@ -1382,6 +1489,16 @@
         els.authError.textContent = "";
       }
 
+      function onLogout() {
+        onStopStream();
+        state.accessToken = "";
+        els.authToken.value = "";
+        els.settingsPanel.classList.add("collapsed");
+        els.settingsToggle.textContent = "设置";
+        lockApp("已退出，请重新输入 token。");
+        setStatus("已退出登录。");
+      }
+
       function selectedProvider() {
         const provider = normalizeProvider(els.provider.value);
         els.provider.value = provider;
@@ -1390,15 +1507,13 @@
 
       function normalizeProvider(provider) {
         const p = String(provider || "").trim().toLowerCase();
-        if (p === "anthropic") return "anthropic";
         if (p === "gemini") return "gemini";
         return "openai_compatible";
       }
 
       function providerLabel(provider) {
-        if (provider === "anthropic") return "Anthropic 原生";
-        if (provider === "gemini") return "Gemini 原生";
-        return "OpenAI 兼容";
+        if (provider === "gemini") return "Gemini";
+        return "通用模型池";
       }
 
       function modelHintText(provider, source, hasModels) {
@@ -1406,7 +1521,10 @@
           return `当前为服务端白名单模式（${providerLabel(provider)}），仅可用列表内模型。`;
         }
         if (hasModels) {
-          return `已拉取 ${providerLabel(provider)} 的模型列表，可直接在表格中点击选择。`;
+          if (provider === "gemini") {
+            return "已拉取 Gemini 模型列表，可直接在表格中点击选择。";
+          }
+          return "当前通用模型池通常包含 OpenAI / Claude / DeepSeek / Qwen / Grok 等主流模型，可直接在表格中点击选择。";
         }
         return `${providerLabel(provider)} 模型列表为空，可手动输入模型名。`;
       }
@@ -1417,7 +1535,7 @@
         let resp;
         let data = {};
         try {
-          resp = await fetch(`${apiBase()}/api/models?${query}`, {
+          resp = await fetch(`/api/models?${query}`, {
             headers: token ? { "X-Client-Token": token } : {},
           });
         } catch {
@@ -1436,7 +1554,7 @@
         const provider = selectedProvider();
         try {
           const query = new URLSearchParams({ provider }).toString();
-          const resp = await fetch(`${apiBase()}/api/models?${query}`, {
+          const resp = await fetch(`/api/models?${query}`, {
             headers: tokenHeaders(),
           });
           const data = await resp.json();
@@ -1528,6 +1646,74 @@
         renderModelTable();
       }
 
+      function renderRecommendedModels() {
+        const provider = selectedProvider();
+        const list = RECOMMENDED_MODELS.filter((item) => item.provider === provider);
+        els.recommendList.innerHTML = "";
+
+        if (!list.length) {
+          const hint = document.createElement("div");
+          hint.className = "hint";
+          hint.textContent = "当前提供商暂无推荐。";
+          els.recommendList.appendChild(hint);
+          return;
+        }
+
+        for (const item of list) {
+          const row = document.createElement("div");
+          row.className = "recommend-item";
+
+          const main = document.createElement("div");
+          main.className = "recommend-main";
+
+          const top = document.createElement("div");
+          top.className = "recommend-top";
+
+          const vendor = document.createElement("span");
+          vendor.className = "recommend-vendor";
+          vendor.textContent = item.vendor;
+
+          const model = document.createElement("span");
+          model.className = "recommend-model";
+          model.textContent = item.model;
+
+          const note = document.createElement("div");
+          note.className = "recommend-note";
+          note.textContent = item.note;
+
+          top.appendChild(vendor);
+          top.appendChild(model);
+          main.appendChild(top);
+          main.appendChild(note);
+
+          const pick = document.createElement("button");
+          pick.type = "button";
+          pick.className = "mini-btn";
+          pick.dataset.model = item.model;
+          pick.textContent = "使用";
+
+          row.appendChild(main);
+          row.appendChild(pick);
+          els.recommendList.appendChild(row);
+        }
+
+        els.recommendHint.textContent =
+          provider === "gemini"
+            ? "当前只展示 Gemini 推荐。"
+            : "当前通用模型池展示的是聚合平台里更值得优先尝试的各家旗舰模型。";
+      }
+
+      function onPickRecommendedModel(e) {
+        const btn = e.target.closest("button[data-model]");
+        if (!btn) return;
+        const model = (btn.dataset.model || "").trim();
+        if (!model) return;
+        els.model.value = model;
+        localStorage.setItem("myai_model", model);
+        setAutoModelNotice(`已套用推荐模型：${model}`);
+        renderModelTable();
+      }
+
       async function onPickFiles() {
         const picked = Array.from(els.fileInput.files || []);
         els.fileInput.value = "";
@@ -1600,7 +1786,7 @@
         const text = els.input.value.trim();
         const selectedModel = els.model.value.trim();
         const provider = selectedProvider();
-        if (!(els.token.value || "").trim()) {
+        if (!state.accessToken.trim()) {
           setStatus("缺少访问 token。", true);
           return;
         }
@@ -1651,7 +1837,7 @@
         setStatus("思考中...");
 
         try {
-          const resp = await fetch(`${apiBase()}/api/chat/stream`, {
+          const resp = await fetch(`/api/chat/stream`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -1766,7 +1952,7 @@
       }
 
       function tokenHeaders() {
-        const token = (els.token.value || "").trim();
+        const token = String(state.accessToken || "").trim();
         return token ? { "X-Client-Token": token } : {};
       }
 
@@ -1840,39 +2026,35 @@
       function detectModelCapabilities(modelName) {
         const m = String(modelName || "").toLowerCase();
         const image =
-          /vision|vl|4o|4\.1|omni|gemini|claude|pixtral|glm-4v|llava|internvl|qvq|qwen-vl|grok-vision/.test(m);
-        const audio = /audio|speech|voice|4o|omni|gemini|qwen-audio|whisper/.test(m);
-        const video = /video|gemini|qwen-vl|max|omni|4o|4\.1/.test(m);
-        const file = image || /file|pdf|doc|document|long|gemini|claude|4o|4\.1|qwen-long/.test(m);
+          /vision|vl|gpt-5|gpt-4o|gpt-4\.1|omni|gemini|claude|pixtral|glm-4v|llava|internvl|qvq|qwen-vl|qwen3\.6|grok-vision/.test(
+            m
+          );
+        const audio = /audio|speech|voice|gpt-5|gpt-4o|omni|gemini|qwen-audio|whisper/.test(m);
+        const video = /video|gemini|qwen-vl|qwen3\.6|omni|gpt-5|gpt-4o|gpt-4\.1/.test(m);
+        const file = image || /file|pdf|doc|document|long|gemini|claude|gpt-5|gpt-4o|gpt-4\.1|qwen-long|qwen3\.6/.test(m);
         return { image, audio, video, file };
       }
 
       function fallbackModelsByRequirement(requirement, provider) {
         const p = normalizeProvider(provider);
-        if (p === "anthropic") {
-          if (requirement === "image") return ["claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-opus"];
-          if (requirement === "file") return ["claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-opus"];
-          if (requirement === "audio" || requirement === "video") return ["claude-3-7-sonnet", "claude-3-5-sonnet"];
-          return [];
-        }
         if (p === "gemini") {
-          if (requirement === "video") return ["gemini-2.0-flash", "gemini-1.5-pro"];
-          if (requirement === "audio") return ["gemini-2.0-flash", "gemini-1.5-pro"];
-          if (requirement === "image") return ["gemini-2.0-flash", "gemini-1.5-pro"];
-          if (requirement === "file") return ["gemini-2.0-flash", "gemini-1.5-pro"];
+          if (requirement === "video") return ["gemini-3.1-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"];
+          if (requirement === "audio") return ["gemini-3.1-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"];
+          if (requirement === "image") return ["gemini-3.1-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"];
+          if (requirement === "file") return ["gemini-3.1-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"];
           return [];
         }
         if (requirement === "video") {
-          return ["gemini-2.0-flash", "gemini-1.5-pro", "qwen-vl-max", "gpt-4.1"];
+          return ["gemini-3.1-pro-preview", "gemini-2.5-pro", "qwen3.6-plus", "qwen-vl-max", "gpt-5.4"];
         }
         if (requirement === "audio") {
-          return ["gpt-4o-audio-preview", "gpt-4o-mini-audio-preview", "qwen-audio", "gemini-2.0-flash"];
+          return ["gpt-5.4", "gemini-3.1-pro-preview", "gemini-2.5-pro", "qwen-audio"];
         }
         if (requirement === "image") {
-          return ["gpt-4.1", "gpt-4o", "qwen-vl-plus", "gemini-2.0-flash", "claude-3-7-sonnet"];
+          return ["gpt-5.4", "qwen3.6-plus", "gemini-3.1-pro-preview", "claude-opus-4-7", "claude-sonnet-4-6"];
         }
         if (requirement === "file") {
-          return ["gpt-4.1", "gpt-4o", "claude-3-7-sonnet", "gemini-2.0-flash"];
+          return ["gpt-5.4", "claude-opus-4-7", "claude-sonnet-4-6", "gemini-3.1-pro-preview", "qwen3.6-plus"];
         }
         return [];
       }
@@ -1900,16 +2082,16 @@
         };
 
         if (requirement === "video") {
-          return 100 + rank([/video/, /gemini/, /qwen-vl/, /vl/, /4\.1/, /4o/]);
+          return 100 + rank([/video/, /gemini-3\.1/, /gemini-2\.5/, /qwen3\.6/, /qwen-vl/, /gpt-5/, /gpt-4o/, /gpt-4\.1/]);
         }
         if (requirement === "audio") {
-          return 100 + rank([/audio/, /speech/, /voice/, /4o/, /gemini/, /qwen-audio/]);
+          return 100 + rank([/audio/, /speech/, /voice/, /gpt-5/, /gpt-4o/, /gemini-3\.1/, /gemini-2\.5/, /qwen-audio/]);
         }
         if (requirement === "image") {
-          return 100 + rank([/vision/, /vl/, /4\.1/, /4o/, /gemini/, /claude/, /pixtral/]);
+          return 100 + rank([/gpt-5/, /vision/, /vl/, /gpt-4o/, /gpt-4\.1/, /gemini-3\.1/, /gemini-2\.5/, /claude/, /pixtral/]);
         }
         if (requirement === "file") {
-          return 100 + rank([/file/, /pdf/, /doc/, /long/, /4\.1/, /4o/, /gemini/, /claude/]);
+          return 100 + rank([/file/, /pdf/, /doc/, /long/, /gpt-5/, /gpt-4o/, /gpt-4\.1/, /gemini-3\.1/, /gemini-2\.5/, /claude/]);
         }
         return 1;
       }
@@ -2024,7 +2206,9 @@
           els.chat.appendChild(row);
         }
 
-        els.chat.scrollTop = els.chat.scrollHeight;
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "auto" });
+        });
       }
 
       function renderMessageContent(container, content, options = {}) {
@@ -2094,6 +2278,7 @@
           return;
         }
         const line = document.createElement("div");
+        line.className = "user-text";
         line.textContent = text || "";
         container.appendChild(line);
       }
