@@ -1019,15 +1019,13 @@
       </section>
 
       <section class="composer">
-        <div class="row">
-          <label for="input">输入</label>
-          <textarea id="input" placeholder="输入你想问的问题"></textarea>
+        <div class="composer-bar">
+          <button class="circle-btn subtle" id="pickFilesBtn" type="button" title="选择附件">+</button>
+          <input id="input" type="text" placeholder="有问题尽管问我" autocomplete="off" />
+          <button class="circle-btn primary" id="sendBtn" type="button" title="发送">↑</button>
+          <button class="circle-btn danger" id="stopBtn" type="button" title="停止" hidden>■</button>
         </div>
-        <div class="row">
-          <div class="attach-head">
-            <label for="fileInput">附件（图片/音频/视频/文件）</label>
-            <button class="chip-btn tiny" id="pickFilesBtn" type="button">选择文件</button>
-          </div>
+        <div class="row composer-extra">
           <input
             id="fileInput"
             type="file"
@@ -1035,12 +1033,14 @@
             hidden
             accept="image/*,audio/*,video/*,.pdf,.txt,.md,.csv,.json,.doc,.docx,.xls,.xlsx"
           />
+          <div class="attach-head">
+            <label for="fileInput">附件（图片/音频/视频/文件）</label>
+          </div>
           <div class="hint" id="attachHint">单个文件不超过 20MB，最多 5 个。</div>
           <div class="attach-list" id="attachList"></div>
         </div>
         <div class="actions">
           <div class="status" id="status"></div>
-          <button class="send-btn" id="sendBtn" type="button">发送</button>
         </div>
       </section>
     </main>
