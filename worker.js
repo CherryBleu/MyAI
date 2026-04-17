@@ -61,11 +61,11 @@ export default {
       const upstreamUrl = `${baseUrl.replace(/\/$/, "")}${chatPath.startsWith("/") ? chatPath : `/${chatPath}`}`;
 
       const payload = {
+        ...(body && typeof body === "object" ? body : {}),
         model,
         messages,
         stream: false,
       };
-
       if (typeof temperature === "number") {
         payload.temperature = temperature;
       }
@@ -105,8 +105,8 @@ export default {
         return json({ error: "Upstream returned non-JSON response." }, 502, request, env);
       }
 
-      const answer = data?.choices?.[0]?.message?.content;
-      if (!answer) {
+      const assistant = normalizeAssistantFromUpstream(data);
+      if (!assistant) {
         return json({ error: "No assistant content from upstream." }, 502, request, env);
       }
 
@@ -114,7 +114,8 @@ export default {
         {
           id: data.id || null,
           model: data.model || model,
-          content: answer,
+          content: assistant.text || "(无文本回复，请查看 message 字段)",
+          message: assistant.message,
           usage: data.usage || null,
         },
         200,
@@ -254,6 +255,112 @@ async function checkRateLimit(key, env) {
 function safeUpstreamError(text) {
   if (!text) return "unknown";
   return text.slice(0, 500);
+}
+
+function normalizeAssistantFromUpstream(data) {
+  const message = extractAssistantMessage(data);
+  if (!message) return null;
+  const text = flattenMessageText(message.content);
+  return { message, text };
+}
+
+function extractAssistantMessage(data) {
+  const choiceMessage = data?.choices?.find((choice) => choice?.message)?.message;
+  if (choiceMessage && typeof choiceMessage === "object") {
+    return normalizeMessage(choiceMessage);
+  }
+
+  const outputMessage = Array.isArray(data?.output)
+    ? data.output.find((item) => item?.type === "message" && Array.isArray(item?.content))
+    : null;
+  if (outputMessage) {
+    return {
+      role: "assistant",
+      content: normalizeMessageContent(outputMessage.content),
+    };
+  }
+
+  if (data?.message && typeof data.message === "object") {
+    return normalizeMessage(data.message);
+  }
+
+  if (typeof data?.output_text === "string" && data.output_text.trim()) {
+    return { role: "assistant", content: data.output_text };
+  }
+
+  return null;
+}
+
+function normalizeMessage(message) {
+  return {
+    role: typeof message.role === "string" ? message.role : "assistant",
+    content: normalizeMessageContent(message.content),
+  };
+}
+
+function normalizeMessageContent(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) {
+    if (content == null) return "";
+    if (typeof content === "object" && typeof content.text === "string") return content.text;
+    return JSON.stringify(content);
+  }
+
+  return content
+    .map((part) => {
+      if (typeof part === "string") {
+        return { type: "text", text: part };
+      }
+      if (!part || typeof part !== "object") return null;
+      if (typeof part.text === "string" && (part.type === "text" || part.type === "output_text" || part.type === "input_text")) {
+        return { type: "text", text: part.text };
+      }
+      if (part.type === "image_url" && part.image_url?.url) {
+        return { type: "image_url", image_url: { url: part.image_url.url } };
+      }
+      if (part.type === "input_audio" && part.input_audio?.data) {
+        return {
+          type: "input_audio",
+          input_audio: {
+            data: part.input_audio.data,
+            format: part.input_audio.format || "mp3",
+          },
+        };
+      }
+      if (part.type === "file_url" && part.file_url?.url) {
+        return {
+          type: "file_url",
+          file_url: {
+            url: part.file_url.url,
+            media_type: part.file_url.media_type || "",
+            filename: part.file_url.filename || "",
+          },
+        };
+      }
+      return part;
+    })
+    .filter(Boolean);
+}
+
+function flattenMessageText(content) {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+
+  const texts = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      texts.push(part);
+      continue;
+    }
+    if (!part || typeof part !== "object") continue;
+    if (typeof part.text === "string") {
+      texts.push(part.text);
+    } else if (typeof part.content === "string") {
+      texts.push(part.content);
+    }
+  }
+
+  return texts.join("\n").trim();
 }
 
 function corsHeaders(request, env) {

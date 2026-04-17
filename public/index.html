@@ -223,6 +223,109 @@
         resize: vertical;
       }
 
+      .attach-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .chip-btn.tiny {
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+
+      .attach-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .attach-item {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 8px 10px;
+        background: #fff;
+      }
+
+      .file-meta {
+        min-width: 0;
+      }
+
+      .file-name {
+        font-size: 13px;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .file-sub {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .file-remove {
+        border: 0;
+        border-radius: 10px;
+        padding: 6px 10px;
+        background: #fee4e2;
+        color: #912018;
+        font-size: 12px;
+      }
+
+      .preview-thumb {
+        width: 48px;
+        height: 48px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+      }
+
+      .preview-chip {
+        min-width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        color: var(--muted);
+        background: var(--surface-soft);
+        padding: 0 6px;
+        text-align: center;
+      }
+
+      .msg-media {
+        display: grid;
+        gap: 8px;
+      }
+
+      .msg-media img {
+        max-width: min(100%, 360px);
+        max-height: 260px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+      }
+
+      .msg-media audio,
+      .msg-media video {
+        width: min(100%, 360px);
+      }
+
+      .file-link {
+        display: inline-block;
+        font-size: 12px;
+        padding: 6px 8px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: #175cd3;
+        background: #f8fbff;
+      }
+
       .actions {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -322,9 +425,9 @@
         </div>
         <div class="row">
           <label for="model">模型</label>
-          <input id="model" list="modelOptions" placeholder="例如：gpt-4.1-mini" />
+          <input id="model" list="modelOptions" placeholder="例如：qwen-plus / claude-3-7-sonnet" />
           <datalist id="modelOptions"></datalist>
-          <div class="hint" id="modelHint">可手动输入模型名。</div>
+          <div class="hint" id="modelHint">支持任意 OpenAI 兼容模型名，可手动输入。</div>
         </div>
       </section>
 
@@ -337,6 +440,21 @@
           <label for="input">输入</label>
           <textarea id="input" placeholder="输入你想问的问题"></textarea>
         </div>
+        <div class="row">
+          <div class="attach-head">
+            <label for="fileInput">附件（图片/音频/视频/文件）</label>
+            <button class="chip-btn tiny" id="pickFilesBtn" type="button">选择文件</button>
+          </div>
+          <input
+            id="fileInput"
+            type="file"
+            multiple
+            hidden
+            accept="image/*,audio/*,video/*,.pdf,.txt,.md,.csv,.json,.doc,.docx,.xls,.xlsx"
+          />
+          <div class="hint" id="attachHint">单个文件不超过 8MB，最多 5 个。</div>
+          <div class="attach-list" id="attachList"></div>
+        </div>
         <div class="actions">
           <div class="status" id="status"></div>
           <button class="send-btn" id="sendBtn" type="button">发送</button>
@@ -345,9 +463,14 @@
     </main>
 
     <script>
+      const MAX_FILE_COUNT = 5;
+      const MAX_FILE_SIZE = 8 * 1024 * 1024;
+      const MAX_TOTAL_SIZE = 20 * 1024 * 1024;
+
       const state = {
         messages: [],
         loading: false,
+        pendingFiles: [],
       };
 
       const els = {
@@ -360,6 +483,10 @@
         modelHint: document.getElementById("modelHint"),
         chat: document.getElementById("chat"),
         input: document.getElementById("input"),
+        pickFilesBtn: document.getElementById("pickFilesBtn"),
+        fileInput: document.getElementById("fileInput"),
+        attachList: document.getElementById("attachList"),
+        attachHint: document.getElementById("attachHint"),
         sendBtn: document.getElementById("sendBtn"),
         clearBtn: document.getElementById("clearBtn"),
         status: document.getElementById("status"),
@@ -373,6 +500,7 @@
         els.model.value = localStorage.getItem("myai_model") || "";
         restoreMessages();
         renderMessages();
+        renderPendingFiles();
         attachEvents();
         await loadModels();
         if ("serviceWorker" in navigator) {
@@ -390,6 +518,9 @@
 
         els.sendBtn.addEventListener("click", onSend);
         els.clearBtn.addEventListener("click", onClear);
+        els.pickFilesBtn.addEventListener("click", () => els.fileInput.click());
+        els.fileInput.addEventListener("change", onPickFiles);
+        els.attachList.addEventListener("click", onRemovePendingFile);
 
         els.apiBase.addEventListener("change", () => {
           localStorage.setItem("myai_api_base", els.apiBase.value.trim());
@@ -442,9 +573,9 @@
           if (data.source === "allowlist") {
             els.modelHint.textContent = "当前为服务端白名单模式，仅可用列表内模型。";
           } else if (models.length) {
-            els.modelHint.textContent = "已拉取上游模型列表，也可手动输入模型名。";
+            els.modelHint.textContent = "已拉取模型列表，也可手动输入任意 OpenAI 兼容模型名。";
           } else {
-            els.modelHint.textContent = "未拉取到模型列表，可手动输入模型名。";
+            els.modelHint.textContent = "未拉取到模型列表，可手动输入任意 OpenAI 兼容模型名。";
           }
 
           if (els.model.value) {
@@ -453,25 +584,96 @@
             setStatus("请手动输入模型名后发送。");
           }
         } catch (e) {
-          els.modelHint.textContent = "模型列表加载失败时，也可以手动输入模型名。";
+          els.modelHint.textContent = "模型列表加载失败时，也可以手动输入任意 OpenAI 兼容模型名。";
           setStatus(`模型加载失败：${e.message}`, true);
         }
+      }
+
+      async function onPickFiles() {
+        const picked = Array.from(els.fileInput.files || []);
+        els.fileInput.value = "";
+        if (!picked.length) return;
+
+        const warnings = [];
+        let added = 0;
+
+        for (const file of picked) {
+          if (state.pendingFiles.length >= MAX_FILE_COUNT) {
+            warnings.push(`最多添加 ${MAX_FILE_COUNT} 个附件。`);
+            break;
+          }
+
+          if (file.size > MAX_FILE_SIZE) {
+            warnings.push(`已跳过 ${file.name}，单文件不能超过 ${formatBytes(MAX_FILE_SIZE)}。`);
+            continue;
+          }
+
+          const projectedTotal = pendingTotalSize() + file.size;
+          if (projectedTotal > MAX_TOTAL_SIZE) {
+            warnings.push(`附件总大小不能超过 ${formatBytes(MAX_TOTAL_SIZE)}。`);
+            break;
+          }
+
+          let dataUrl = "";
+          try {
+            dataUrl = await readFileAsDataUrl(file);
+          } catch {
+            warnings.push(`读取失败：${file.name}`);
+            continue;
+          }
+
+          const mimeType = file.type || inferMimeType(file.name);
+          state.pendingFiles.push({
+            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            name: file.name || "unnamed",
+            size: file.size,
+            mimeType,
+            dataUrl,
+          });
+          added += 1;
+        }
+
+        renderPendingFiles();
+        if (warnings.length) {
+          setStatus(warnings.join(" "), true);
+        } else if (added > 0) {
+          setStatus(`已添加 ${added} 个附件。`);
+        }
+      }
+
+      function onRemovePendingFile(e) {
+        const btn = e.target.closest("button[data-remove-index]");
+        if (!btn) return;
+
+        const idx = Number(btn.dataset.removeIndex);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= state.pendingFiles.length) return;
+        state.pendingFiles.splice(idx, 1);
+        renderPendingFiles();
       }
 
       async function onSend() {
         if (state.loading) return;
 
-        const content = els.input.value.trim();
+        const text = els.input.value.trim();
         const selectedModel = els.model.value.trim();
-        if (!content) return;
+        if (!text && !state.pendingFiles.length) return;
         if (!selectedModel) {
           setStatus("请先输入模型名。", true);
           return;
         }
 
         localStorage.setItem("myai_model", selectedModel);
-        state.messages.push({ role: "user", content });
+
+        const userMessage = {
+          role: "user",
+          content: buildUserContent(text, state.pendingFiles),
+        };
+        state.messages.push(userMessage);
+
         els.input.value = "";
+        state.pendingFiles = [];
+        els.fileInput.value = "";
+        renderPendingFiles();
         saveMessages();
         renderMessages();
 
@@ -496,7 +698,7 @@
           const data = await resp.json();
           if (!resp.ok) throw new Error(data.error || "请求失败");
 
-          state.messages.push({ role: "assistant", content: data.content || "(空回复)" });
+          state.messages.push(normalizeAssistantMessage(data));
           saveMessages();
           renderMessages();
           setStatus("完成");
@@ -511,8 +713,11 @@
 
       function onClear() {
         state.messages = [];
+        state.pendingFiles = [];
+        els.fileInput.value = "";
         saveMessages();
         renderMessages();
+        renderPendingFiles();
         setStatus("已清空会话。");
       }
 
@@ -524,6 +729,60 @@
       function setStatus(text, isError = false) {
         els.status.textContent = text;
         els.status.classList.toggle("error", !!isError);
+      }
+
+      function renderPendingFiles() {
+        els.attachList.innerHTML = "";
+        els.attachHint.textContent = `单个文件不超过 ${formatBytes(MAX_FILE_SIZE)}，最多 ${MAX_FILE_COUNT} 个，总计不超过 ${formatBytes(MAX_TOTAL_SIZE)}。`;
+        for (let i = 0; i < state.pendingFiles.length; i += 1) {
+          const file = state.pendingFiles[i];
+          const item = document.createElement("div");
+          item.className = "attach-item";
+
+          item.appendChild(buildPendingPreview(file));
+
+          const meta = document.createElement("div");
+          meta.className = "file-meta";
+          const name = document.createElement("div");
+          name.className = "file-name";
+          name.textContent = file.name;
+          const sub = document.createElement("div");
+          sub.className = "file-sub";
+          sub.textContent = `${file.mimeType || "unknown"} · ${formatBytes(file.size)}`;
+          meta.appendChild(name);
+          meta.appendChild(sub);
+          item.appendChild(meta);
+
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "file-remove";
+          remove.dataset.removeIndex = String(i);
+          remove.textContent = "移除";
+          item.appendChild(remove);
+
+          els.attachList.appendChild(item);
+        }
+      }
+
+      function buildPendingPreview(file) {
+        if (isImageMime(file.mimeType)) {
+          const img = document.createElement("img");
+          img.className = "preview-thumb";
+          img.alt = file.name;
+          img.src = file.dataUrl;
+          return img;
+        }
+
+        const chip = document.createElement("div");
+        chip.className = "preview-chip";
+        if (isAudioMime(file.mimeType)) {
+          chip.textContent = "AUDIO";
+        } else if (isVideoMime(file.mimeType)) {
+          chip.textContent = "VIDEO";
+        } else {
+          chip.textContent = "FILE";
+        }
+        return chip;
       }
 
       function renderMessages() {
@@ -540,24 +799,385 @@
         for (const msg of state.messages) {
           const div = document.createElement("div");
           div.className = `msg ${msg.role === "user" ? "user" : "assistant"}`;
-          div.textContent = msg.content;
+          renderMessageContent(div, msg.content);
           els.chat.appendChild(div);
         }
 
         els.chat.scrollTop = els.chat.scrollHeight;
       }
 
+      function renderMessageContent(container, content) {
+        if (typeof content === "string") {
+          appendText(container, content);
+          return;
+        }
+
+        if (!Array.isArray(content)) {
+          appendText(container, stringifyUnknown(content));
+          return;
+        }
+
+        if (!content.length) {
+          appendText(container, "(空消息)");
+          return;
+        }
+
+        for (const part of content) {
+          appendPart(container, part);
+        }
+      }
+
+      function appendPart(container, part) {
+        if (typeof part === "string") {
+          appendText(container, part);
+          return;
+        }
+        if (!part || typeof part !== "object") {
+          appendText(container, stringifyUnknown(part));
+          return;
+        }
+
+        if (part.type === "text" || part.type === "output_text" || typeof part.text === "string") {
+          appendText(container, part.text || "");
+          return;
+        }
+
+        if (part.type === "image_url" && part.image_url?.url) {
+          appendImage(container, part.image_url.url);
+          return;
+        }
+
+        if (part.type === "input_audio" && part.input_audio?.data) {
+          const format = normalizeAudioFormat(part.input_audio.format || "mp3");
+          appendAudio(container, `data:audio/${format};base64,${part.input_audio.data}`);
+          return;
+        }
+
+        if (part.type === "file_url" && part.file_url?.url) {
+          appendFile(container, part.file_url.url, part.file_url.media_type, part.file_url.filename);
+          return;
+        }
+
+        appendText(container, stringifyUnknown(part));
+      }
+
+      function appendText(container, text) {
+        const line = document.createElement("div");
+        line.textContent = text || "";
+        container.appendChild(line);
+      }
+
+      function appendImage(container, url) {
+        if (!isRenderableUrl(url)) {
+          appendText(container, "[图片附件]");
+          return;
+        }
+        const box = document.createElement("div");
+        box.className = "msg-media";
+        const img = document.createElement("img");
+        img.alt = "image";
+        img.loading = "lazy";
+        img.src = url;
+        box.appendChild(img);
+        container.appendChild(box);
+      }
+
+      function appendAudio(container, url) {
+        if (!isRenderableUrl(url)) {
+          appendText(container, "[音频附件]");
+          return;
+        }
+        const box = document.createElement("div");
+        box.className = "msg-media";
+        const audio = document.createElement("audio");
+        audio.controls = true;
+        audio.preload = "metadata";
+        audio.src = url;
+        box.appendChild(audio);
+        container.appendChild(box);
+      }
+
+      function appendVideo(container, url) {
+        if (!isRenderableUrl(url)) {
+          appendText(container, "[视频附件]");
+          return;
+        }
+        const box = document.createElement("div");
+        box.className = "msg-media";
+        const video = document.createElement("video");
+        video.controls = true;
+        video.preload = "metadata";
+        video.src = url;
+        box.appendChild(video);
+        container.appendChild(box);
+      }
+
+      function appendFile(container, url, mediaType, filename) {
+        const type = mediaType || inferMimeType(filename || "");
+        if (isImageMime(type)) {
+          appendImage(container, url);
+          return;
+        }
+        if (isAudioMime(type)) {
+          appendAudio(container, url);
+          return;
+        }
+        if (isVideoMime(type)) {
+          appendVideo(container, url);
+          return;
+        }
+
+        const label = filename ? `附件：${filename}` : "附件文件";
+        if (!isRenderableUrl(url)) {
+          appendText(container, label);
+          return;
+        }
+        const link = document.createElement("a");
+        link.className = "file-link";
+        link.href = url;
+        link.textContent = label;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.download = filename || "";
+        container.appendChild(link);
+      }
+
+      function buildUserContent(text, files) {
+        if (!files.length) return text;
+
+        const parts = [];
+        if (text) {
+          parts.push({ type: "text", text });
+        }
+
+        for (const file of files) {
+          if (!isImageMime(file.mimeType)) {
+            parts.push({
+              type: "text",
+              text: `[附件] ${file.name} (${file.mimeType || "unknown"}, ${formatBytes(file.size)})`,
+            });
+          }
+          parts.push(buildPartFromFile(file));
+        }
+        return parts;
+      }
+
+      function buildPartFromFile(file) {
+        if (isImageMime(file.mimeType)) {
+          return {
+            type: "image_url",
+            image_url: {
+              url: file.dataUrl,
+            },
+          };
+        }
+
+        if (isAudioMime(file.mimeType)) {
+          const parsed = parseDataUrl(file.dataUrl);
+          if (parsed.base64) {
+            return {
+              type: "input_audio",
+              input_audio: {
+                data: parsed.base64,
+                format: normalizeAudioFormat(file.mimeType.split("/")[1] || "mp3"),
+              },
+            };
+          }
+        }
+
+        return {
+          type: "file_url",
+          file_url: {
+            url: file.dataUrl,
+            media_type: file.mimeType || "application/octet-stream",
+            filename: file.name,
+          },
+        };
+      }
+
+      function normalizeAssistantMessage(data) {
+        if (data?.message && typeof data.message === "object") {
+          return {
+            role: "assistant",
+            content: normalizeMessageContent(data.message.content),
+          };
+        }
+        return {
+          role: "assistant",
+          content: normalizeMessageContent(data?.content),
+        };
+      }
+
+      function normalizeMessageContent(content) {
+        if (typeof content === "string") {
+          return content || "(空回复)";
+        }
+        if (Array.isArray(content)) {
+          return content;
+        }
+        if (content == null) {
+          return "(空回复)";
+        }
+        if (typeof content === "object") {
+          if (typeof content.text === "string") return content.text;
+          return stringifyUnknown(content);
+        }
+        return String(content);
+      }
+
       function saveMessages() {
-        localStorage.setItem("myai_messages", JSON.stringify(state.messages.slice(-30)));
+        const compact = state.messages.slice(-30).map(compactMessage);
+        localStorage.setItem("myai_messages", JSON.stringify(compact));
+      }
+
+      function compactMessage(msg) {
+        if (!msg || typeof msg !== "object") return null;
+        return {
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: compactContent(msg.content),
+        };
+      }
+
+      function compactContent(content) {
+        if (typeof content === "string") {
+          return truncate(content, 4000);
+        }
+        if (!Array.isArray(content)) {
+          return truncate(stringifyUnknown(content), 2000);
+        }
+        return content
+          .map((part) => {
+            if (typeof part === "string") {
+              return { type: "text", text: truncate(part, 1000) };
+            }
+            if (!part || typeof part !== "object") return null;
+            if (part.type === "text" || part.type === "output_text" || typeof part.text === "string") {
+              return { type: "text", text: truncate(part.text || "", 1200) };
+            }
+            if (part.type === "image_url") {
+              return { type: "text", text: "[图片附件已省略，刷新后不可重复发送]" };
+            }
+            if (part.type === "input_audio") {
+              return { type: "text", text: "[音频附件已省略，刷新后不可重复发送]" };
+            }
+            if (part.type === "file_url") {
+              const name = part.file_url?.filename || "";
+              return { type: "text", text: `[文件附件已省略，刷新后不可重复发送] ${name}`.trim() };
+            }
+            return { type: "text", text: truncate(stringifyUnknown(part), 800) };
+          })
+          .filter(Boolean);
       }
 
       function restoreMessages() {
         try {
           const v = localStorage.getItem("myai_messages");
-          state.messages = v ? JSON.parse(v) : [];
-          if (!Array.isArray(state.messages)) state.messages = [];
+          const parsed = v ? JSON.parse(v) : [];
+          state.messages = Array.isArray(parsed)
+            ? parsed
+                .map((m) => {
+                  if (!m || typeof m !== "object") return null;
+                  return {
+                    role: m.role === "assistant" ? "assistant" : "user",
+                    content: normalizeMessageContent(m.content),
+                  };
+                })
+                .filter(Boolean)
+            : [];
         } catch {
           state.messages = [];
+        }
+      }
+
+      function pendingTotalSize() {
+        return state.pendingFiles.reduce((sum, file) => sum + (file.size || 0), 0);
+      }
+
+      function readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("read failed"));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function parseDataUrl(url) {
+        if (typeof url !== "string" || !url.startsWith("data:")) return { mime: "", base64: "" };
+        const comma = url.indexOf(",");
+        if (comma === -1) return { mime: "", base64: "" };
+        const meta = url.slice(5, comma);
+        const mime = meta.split(";")[0] || "";
+        const base64 = meta.includes(";base64") ? url.slice(comma + 1) : "";
+        return { mime, base64 };
+      }
+
+      function normalizeAudioFormat(format) {
+        const f = String(format || "").toLowerCase();
+        if (f === "mpeg") return "mp3";
+        if (f === "wave") return "wav";
+        if (f === "x-wav") return "wav";
+        if (f === "quicktime") return "mov";
+        return f || "mp3";
+      }
+
+      function inferMimeType(name) {
+        const n = String(name || "").toLowerCase();
+        if (n.endsWith(".png")) return "image/png";
+        if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
+        if (n.endsWith(".webp")) return "image/webp";
+        if (n.endsWith(".gif")) return "image/gif";
+        if (n.endsWith(".mp3")) return "audio/mp3";
+        if (n.endsWith(".wav")) return "audio/wav";
+        if (n.endsWith(".m4a")) return "audio/m4a";
+        if (n.endsWith(".mp4")) return "video/mp4";
+        if (n.endsWith(".mov")) return "video/quicktime";
+        if (n.endsWith(".pdf")) return "application/pdf";
+        return "application/octet-stream";
+      }
+
+      function isImageMime(mime) {
+        return String(mime || "").startsWith("image/");
+      }
+
+      function isAudioMime(mime) {
+        return String(mime || "").startsWith("audio/");
+      }
+
+      function isVideoMime(mime) {
+        return String(mime || "").startsWith("video/");
+      }
+
+      function isRenderableUrl(url) {
+        return typeof url === "string" && (url.startsWith("data:") || /^https?:\/\//.test(url));
+      }
+
+      function formatBytes(size) {
+        const n = Number(size || 0);
+        if (!Number.isFinite(n) || n <= 0) return "0 B";
+        if (n < 1024) return `${n} B`;
+        const units = ["KB", "MB", "GB"];
+        let value = n / 1024;
+        let idx = 0;
+        while (value >= 1024 && idx < units.length - 1) {
+          value /= 1024;
+          idx += 1;
+        }
+        return `${value.toFixed(value >= 10 || idx === 0 ? 1 : 2)} ${units[idx]}`;
+      }
+
+      function truncate(text, maxLen) {
+        const t = String(text || "");
+        return t.length <= maxLen ? t : `${t.slice(0, maxLen)}...`;
+      }
+
+      function stringifyUnknown(value) {
+        if (value == null) return "";
+        if (typeof value === "string") return value;
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return String(value);
         }
       }
     </script>
