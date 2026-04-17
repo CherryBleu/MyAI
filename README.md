@@ -1,7 +1,7 @@
 ﻿# MyAI Mobile（HTML + 安全中转）
 
 这是一个适合手机轻环境的最小方案：
-- 前端：纯 `HTML` 聊天页，可切换模型。
+- 前端：纯 `HTML` 聊天页，可切换模型并上传图片/音频/视频/文件。
 - 后端：`Cloudflare Worker` 中转，真实上游 `API Key` 仅保存在服务端。
 - 新增：`Node` 服务端（`server.js`），可部署到 Render/Railway，电脑无需常开。
 
@@ -31,6 +31,7 @@
 - `ACCESS_TOKENS`：给朋友发的访问口令（逗号分隔）
 - `ALLOWED_ORIGINS`：可选，限制来源域名
 - `RATE_LIMIT_PER_MIN`：每个口令每分钟请求上限；`0` 或负数表示不限制
+- `MAX_BODY_SIZE_MB`：仅 Node 服务端生效，控制单次请求体上限（默认 `25`，用于多媒体上传）
 
 先安装依赖（PowerShell 建议用 `npm.cmd`）：
 
@@ -52,8 +53,9 @@ npm.cmd run dev
 
 浏览器访问本地地址后：
 1. 在页面里填访问口令（你配置在 `ACCESS_TOKENS` 的值）。
-2. 模型列表会从 `/api/models` 拉取；若上游不支持列表接口，也可手动输入模型名。
-3. 发送消息由 `/api/chat` 转发到上游。
+2. 模型列表会从 `/api/models` 拉取；若上游不支持列表接口，也可手动输入任意 OpenAI 兼容模型名（不局限 GPT）。
+3. 支持上传图片/音频/视频/文件（默认单文件 8MB、最多 5 个；附件会以内联数据发送到上游）。
+4. 发送消息由 `/api/chat` 转发到上游。
 
 ### 手机直连本机（不依赖 workers.dev）
 
@@ -114,6 +116,7 @@ npm.cmd run start
 - `ALLOWED_MODELS`（留空=不限模型）
 - `ALLOWED_ORIGINS`（留空=不限制来源）
 - `RATE_LIMIT_PER_MIN`（`0`=不限流）
+- `MAX_BODY_SIZE_MB`（默认 `25`，多媒体场景建议按需调大）
 
 Render 可直接使用仓库内 `render.yaml` 创建服务。
 
