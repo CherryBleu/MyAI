@@ -18,6 +18,10 @@ UPSTREAM_BASE_URL = "https://api.n1n.ai"
 UPSTREAM_CHAT_PATH = "/v1/chat/completions"
 # 上游模型列表接口路径（用于前端候选列表）
 UPSTREAM_MODELS_PATH = "/v1/models"
+# 可选：第三方兼容服务鉴权头，默认 Authorization
+UPSTREAM_API_KEY_HEADER = "Authorization"
+# 可选：当鉴权头为 Authorization 时生效，默认 Bearer（注意末尾空格）
+UPSTREAM_API_KEY_PREFIX = "Bearer "
 # Anthropic 原生接口配置
 ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 ANTHROPIC_MESSAGES_PATH = "/v1/messages"

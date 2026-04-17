@@ -16,6 +16,10 @@
         value: /v1/chat/completions
       - key: UPSTREAM_MODELS_PATH
         value: /v1/models
+      - key: UPSTREAM_API_KEY_HEADER
+        value: Authorization
+      - key: UPSTREAM_API_KEY_PREFIX
+        value: "Bearer "
       - key: UPSTREAM_API_KEY
         sync: false
       - key: ANTHROPIC_BASE_URL
