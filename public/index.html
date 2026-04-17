@@ -135,7 +135,8 @@
       }
 
       input,
-      textarea {
+      textarea,
+      select {
         width: 100%;
         border: 1px solid var(--line);
         border-radius: 12px;
@@ -148,7 +149,8 @@
       }
 
       input:focus,
-      textarea:focus {
+      textarea:focus,
+      select:focus {
         border-color: #b8c2ff;
         box-shadow: 0 0 0 4px rgba(90, 106, 242, 0.12);
       }
@@ -422,12 +424,20 @@
             <label for="token">访问口令（不是上游 API Key）</label>
             <input id="token" type="password" placeholder="向你领取的口令" />
           </div>
+          <div class="row">
+            <label for="provider">上游提供商</label>
+            <select id="provider">
+              <option value="openai_compatible">OpenAI 兼容</option>
+              <option value="anthropic">Anthropic 原生</option>
+              <option value="gemini">Gemini 原生</option>
+            </select>
+          </div>
         </div>
         <div class="row">
           <label for="model">模型</label>
           <input id="model" list="modelOptions" placeholder="例如：qwen-plus / claude-3-7-sonnet" />
           <datalist id="modelOptions"></datalist>
-          <div class="hint" id="modelHint">支持任意 OpenAI 兼容模型名，可手动输入。</div>
+          <div class="hint" id="modelHint">可手动输入模型名；模型列表会按提供商加载。</div>
           <div class="hint" id="autoModelNotice"></div>
         </div>
       </section>
@@ -480,6 +490,7 @@
         settingsToggle: document.getElementById("settingsToggle"),
         apiBase: document.getElementById("apiBase"),
         token: document.getElementById("token"),
+        provider: document.getElementById("provider"),
         model: document.getElementById("model"),
         modelOptions: document.getElementById("modelOptions"),
         modelHint: document.getElementById("modelHint"),
@@ -500,6 +511,7 @@
       async function init() {
         els.apiBase.value = localStorage.getItem("myai_api_base") || "";
         els.token.value = localStorage.getItem("myai_access_token") || "";
+        els.provider.value = normalizeProvider(localStorage.getItem("myai_provider") || "openai_compatible");
         els.model.value = localStorage.getItem("myai_model") || "";
         restoreMessages();
         renderMessages();
@@ -535,6 +547,14 @@
           loadModels();
         });
 
+        els.provider.addEventListener("change", () => {
+          const provider = normalizeProvider(els.provider.value);
+          els.provider.value = provider;
+          localStorage.setItem("myai_provider", provider);
+          setAutoModelNotice("");
+          loadModels();
+        });
+
         els.model.addEventListener("change", () => {
           localStorage.setItem("myai_model", els.model.value.trim());
           setAutoModelNotice("");
@@ -552,10 +572,41 @@
         return (els.apiBase.value || "").trim() || location.origin;
       }
 
+      function selectedProvider() {
+        const provider = normalizeProvider(els.provider.value);
+        els.provider.value = provider;
+        return provider;
+      }
+
+      function normalizeProvider(provider) {
+        const p = String(provider || "").trim().toLowerCase();
+        if (p === "anthropic") return "anthropic";
+        if (p === "gemini") return "gemini";
+        return "openai_compatible";
+      }
+
+      function providerLabel(provider) {
+        if (provider === "anthropic") return "Anthropic 原生";
+        if (provider === "gemini") return "Gemini 原生";
+        return "OpenAI 兼容";
+      }
+
+      function modelHintText(provider, source, hasModels) {
+        if (source === "allowlist") {
+          return `当前为服务端白名单模式（${providerLabel(provider)}），仅可用列表内模型。`;
+        }
+        if (hasModels) {
+          return `已拉取 ${providerLabel(provider)} 的模型列表，也可手动输入模型名。`;
+        }
+        return `${providerLabel(provider)} 模型列表为空，可手动输入模型名。`;
+      }
+
       async function loadModels() {
         setStatus("正在加载模型列表...");
+        const provider = selectedProvider();
         try {
-          const resp = await fetch(`${apiBase()}/api/models`, {
+          const query = new URLSearchParams({ provider }).toString();
+          const resp = await fetch(`${apiBase()}/api/models?${query}`, {
             headers: tokenHeaders(),
           });
           const data = await resp.json();
@@ -575,13 +626,7 @@
             localStorage.setItem("myai_model", els.model.value);
           }
 
-          if (data.source === "allowlist") {
-            els.modelHint.textContent = "当前为服务端白名单模式，仅可用列表内模型。";
-          } else if (models.length) {
-            els.modelHint.textContent = "已拉取模型列表，也可手动输入任意 OpenAI 兼容模型名。";
-          } else {
-            els.modelHint.textContent = "未拉取到模型列表，可手动输入任意 OpenAI 兼容模型名。";
-          }
+          els.modelHint.textContent = modelHintText(provider, data.source, models.length > 0);
 
           if (els.model.value) {
             setStatus("模型已就绪。");
@@ -590,7 +635,7 @@
           }
         } catch (e) {
           state.availableModels = [];
-          els.modelHint.textContent = "模型列表加载失败时，也可以手动输入任意 OpenAI 兼容模型名。";
+          els.modelHint.textContent = `${providerLabel(provider)} 模型列表加载失败时，也可以手动输入模型名。`;
           setStatus(`模型加载失败：${e.message}`, true);
         }
       }
@@ -662,13 +707,14 @@
 
         const text = els.input.value.trim();
         const selectedModel = els.model.value.trim();
+        const provider = selectedProvider();
         if (!text && !state.pendingFiles.length) return;
         if (!selectedModel) {
           setStatus("请先输入模型名。", true);
           return;
         }
 
-        const modelDecision = chooseModelForAttachments(selectedModel, state.pendingFiles, state.availableModels);
+        const modelDecision = chooseModelForAttachments(selectedModel, state.pendingFiles, state.availableModels, provider);
         const modelToUse = modelDecision.model;
         localStorage.setItem("myai_model", modelToUse);
         if (modelDecision.switched) {
@@ -706,6 +752,7 @@
               ...tokenHeaders(),
             },
             body: JSON.stringify({
+              provider,
               model: modelToUse,
               messages: state.messages,
             }),
@@ -752,7 +799,7 @@
         els.autoModelNotice.textContent = text || "";
       }
 
-      function chooseModelForAttachments(currentModel, files, availableModels) {
+      function chooseModelForAttachments(currentModel, files, availableModels, provider) {
         const requirement = detectAttachmentRequirement(files);
         if (!requirement.need) {
           return { model: currentModel, switched: false, reasonLabel: "" };
@@ -765,7 +812,7 @@
         const candidates = uniqueModels([
           ...(Array.isArray(availableModels) ? availableModels : []),
           currentModel,
-          ...fallbackModelsByRequirement(requirement.need),
+          ...fallbackModelsByRequirement(requirement.need, provider),
         ]);
 
         const best = pickBestModelForRequirement(candidates, requirement.need);
@@ -813,7 +860,21 @@
         return { image, audio, video, file };
       }
 
-      function fallbackModelsByRequirement(requirement) {
+      function fallbackModelsByRequirement(requirement, provider) {
+        const p = normalizeProvider(provider);
+        if (p === "anthropic") {
+          if (requirement === "image") return ["claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-opus"];
+          if (requirement === "file") return ["claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-opus"];
+          if (requirement === "audio" || requirement === "video") return ["claude-3-7-sonnet", "claude-3-5-sonnet"];
+          return [];
+        }
+        if (p === "gemini") {
+          if (requirement === "video") return ["gemini-2.0-flash", "gemini-1.5-pro"];
+          if (requirement === "audio") return ["gemini-2.0-flash", "gemini-1.5-pro"];
+          if (requirement === "image") return ["gemini-2.0-flash", "gemini-1.5-pro"];
+          if (requirement === "file") return ["gemini-2.0-flash", "gemini-1.5-pro"];
+          return [];
+        }
         if (requirement === "video") {
           return ["gemini-2.0-flash", "gemini-1.5-pro", "qwen-vl-max", "gpt-4.1"];
         }

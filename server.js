@@ -39,7 +39,8 @@ const server = http.createServer(async (req, res) => {
     const auth = checkAccessToken(req);
     if (!auth.ok) return sendJson(res, req, auth.status, { error: auth.error });
 
-    const modelInfo = await getModelInfo();
+    const provider = resolveProvider(url.searchParams.get("provider"));
+    const modelInfo = await getModelInfo(provider);
     return sendJson(res, req, 200, modelInfo);
   }
 
@@ -78,65 +79,24 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, req, 400, { error: "model is not in allowlist." });
     }
 
-    const upstreamApiKey = (process.env.UPSTREAM_API_KEY || "").trim();
-    const baseUrl = (process.env.UPSTREAM_BASE_URL || "").trim();
-    const chatPath = (process.env.UPSTREAM_CHAT_PATH || "/v1/chat/completions").trim();
-
-    if (!upstreamApiKey || !baseUrl) {
-      return sendJson(res, req, 500, { error: "Server not configured: missing UPSTREAM_API_KEY or UPSTREAM_BASE_URL." });
-    }
-
-    const upstreamUrl = `${baseUrl.replace(/\/$/, "")}${chatPath.startsWith("/") ? chatPath : `/${chatPath}`}`;
-
-    const payload = {
-      ...(body && typeof body === "object" ? body : {}),
-      model,
-      messages,
-      stream: false,
-    };
-    if (typeof temperature === "number") payload.temperature = temperature;
-
-    let upstreamResp;
-    try {
-      upstreamResp = await fetch(upstreamUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${upstreamApiKey}`,
-        },
-        body: JSON.stringify(payload),
-      });
-    } catch {
-      return sendJson(res, req, 502, { error: "Failed to connect upstream model service." });
-    }
-
-    const text = await upstreamResp.text();
-    if (!upstreamResp.ok) {
+    const provider = resolveProvider(body?.provider);
+    const forwarded = await forwardChatByProvider({ provider, body, model, messages, temperature });
+    if (!forwarded.ok) {
       return sendJson(res, req, 502, {
-        error: "Upstream request failed.",
-        upstreamStatus: upstreamResp.status,
-        detail: safeUpstreamError(text),
+        error: forwarded.error || "Upstream request failed.",
+        upstreamStatus: forwarded.upstreamStatus || null,
+        detail: forwarded.detail || undefined,
+        provider,
       });
-    }
-
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      return sendJson(res, req, 502, { error: "Upstream returned non-JSON response." });
-    }
-
-    const assistant = normalizeAssistantFromUpstream(data);
-    if (!assistant) {
-      return sendJson(res, req, 502, { error: "No assistant content from upstream." });
     }
 
     return sendJson(res, req, 200, {
-      id: data.id || null,
-      model: data.model || model,
-      content: assistant.text || "(无文本回复，请查看 message 字段)",
-      message: assistant.message,
-      usage: data.usage || null,
+      id: forwarded.id || null,
+      provider,
+      model: forwarded.model || model,
+      content: forwarded.assistant.text || "(鏃犳枃鏈洖澶嶏紝璇锋煡鐪?message 瀛楁)",
+      message: forwarded.assistant.message,
+      usage: forwarded.usage || null,
     });
   }
 
@@ -168,6 +128,23 @@ function sendJson(res, req, status, data, extraHeaders = {}) {
     ...extraHeaders,
   });
   res.end(JSON.stringify(data));
+}
+
+function resolveProvider(input) {
+  return normalizeProvider(input, getDefaultProvider());
+}
+
+function getDefaultProvider() {
+  return normalizeProvider(process.env.UPSTREAM_PROVIDER || "openai_compatible", "openai_compatible");
+}
+
+function normalizeProvider(input, fallback = "openai_compatible") {
+  const base = String(fallback || "openai_compatible").trim().toLowerCase();
+  const p = String(input || "").trim().toLowerCase();
+  if (p === "anthropic") return "anthropic";
+  if (p === "gemini" || p === "google" || p === "google_gemini") return "gemini";
+  if (p === "openai" || p === "openai_compatible" || p === "openai-compatible") return "openai_compatible";
+  return base === "anthropic" || base === "gemini" ? base : "openai_compatible";
 }
 
 function getAllowedModels() {
@@ -231,18 +208,19 @@ function checkRateLimit(key) {
   return { ok: true };
 }
 
-async function getModelInfo() {
+async function getModelInfo(provider) {
   const allowedModels = getAllowedModels();
   if (allowedModels.length) {
-    return { models: allowedModels, freeInput: false, source: "allowlist" };
+    return { provider, models: allowedModels, freeInput: false, source: "allowlist" };
   }
 
-  const upstream = await fetchUpstreamModels();
+  const upstream = await fetchModelsByProvider(provider);
   if (upstream.ok) {
-    return { models: upstream.models, freeInput: true, source: "upstream" };
+    return { provider, models: upstream.models, freeInput: true, source: "upstream" };
   }
 
   return {
+    provider,
     models: [],
     freeInput: true,
     source: "manual",
@@ -250,38 +228,31 @@ async function getModelInfo() {
   };
 }
 
-async function fetchUpstreamModels() {
-  const upstreamApiKey = (process.env.UPSTREAM_API_KEY || "").trim();
-  const baseUrl = (process.env.UPSTREAM_BASE_URL || "").trim();
-  const pathPart = (process.env.UPSTREAM_MODELS_PATH || "/v1/models").trim();
+async function fetchModelsByProvider(provider) {
+  if (provider === "anthropic") return fetchAnthropicModels();
+  if (provider === "gemini") return fetchGeminiModels();
+  return fetchOpenAICompatibleModels();
+}
 
-  if (!upstreamApiKey || !baseUrl) {
-    return { ok: false, error: "missing UPSTREAM_API_KEY or UPSTREAM_BASE_URL" };
-  }
+async function fetchOpenAICompatibleModels() {
+  const cfg = getOpenAICompatibleConfig();
+  if (!cfg.ok) return cfg;
 
-  const url = `${baseUrl.replace(/\/$/, "")}${pathPart.startsWith("/") ? pathPart : `/${pathPart}`}`;
-
+  const url = buildUrl(cfg.baseUrl, cfg.modelsPath);
   let resp;
   try {
     resp = await fetch(url, {
       method: "GET",
-      headers: { Authorization: `Bearer ${upstreamApiKey}` },
+      headers: { Authorization: `Bearer ${cfg.apiKey}` },
     });
   } catch {
     return { ok: false, error: "failed to fetch upstream models" };
   }
 
-  if (!resp.ok) {
-    return { ok: false, error: `upstream models failed: ${resp.status}` };
-  }
+  const parsed = await readUpstreamJson(resp);
+  if (!parsed.ok) return parsed;
 
-  let data;
-  try {
-    data = await resp.json();
-  } catch {
-    return { ok: false, error: "upstream models response is not valid JSON" };
-  }
-
+  const data = parsed.data || {};
   const models = Array.isArray(data?.data)
     ? data.data
         .map((item) => item?.id)
@@ -289,7 +260,555 @@ async function fetchUpstreamModels() {
         .map((id) => id.trim())
     : [];
 
-  return { ok: true, models: [...new Set(models)].sort() };
+  return { ok: true, models: uniqueSorted(models) };
+}
+
+async function fetchAnthropicModels() {
+  const cfg = getAnthropicConfig();
+  if (!cfg.ok) return cfg;
+
+  const url = buildUrl(cfg.baseUrl, cfg.modelsPath);
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: "GET",
+      headers: {
+        "x-api-key": cfg.apiKey,
+        "anthropic-version": cfg.version,
+      },
+    });
+  } catch {
+    return { ok: false, error: "failed to fetch anthropic models" };
+  }
+
+  const parsed = await readUpstreamJson(resp);
+  if (!parsed.ok) return parsed;
+
+  const data = parsed.data || {};
+  const models = Array.isArray(data?.data)
+    ? data.data
+        .map((item) => item?.id || item?.name)
+        .filter((id) => typeof id === "string" && id.trim())
+        .map((id) => id.trim())
+    : [];
+
+  return { ok: true, models: uniqueSorted(models) };
+}
+
+async function fetchGeminiModels() {
+  const cfg = getGeminiConfig();
+  if (!cfg.ok) return cfg;
+
+  const url = buildUrl(cfg.baseUrl, cfg.modelsPath);
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: "GET",
+      headers: {
+        "x-goog-api-key": cfg.apiKey,
+      },
+    });
+  } catch {
+    return { ok: false, error: "failed to fetch gemini models" };
+  }
+
+  const parsed = await readUpstreamJson(resp);
+  if (!parsed.ok) return parsed;
+
+  const data = parsed.data || {};
+  const models = Array.isArray(data?.models)
+    ? data.models
+        .map((item) => item?.name)
+        .filter((name) => typeof name === "string" && name.trim())
+        .map((name) => name.trim().replace(/^models\//, ""))
+    : [];
+
+  return { ok: true, models: uniqueSorted(models) };
+}
+
+async function forwardChatByProvider({ provider, body, model, messages, temperature }) {
+  if (provider === "anthropic") {
+    return forwardAnthropicChat({ body, model, messages, temperature });
+  }
+  if (provider === "gemini") {
+    return forwardGeminiChat({ body, model, messages, temperature });
+  }
+  return forwardOpenAICompatibleChat({ body, model, messages, temperature });
+}
+
+async function forwardOpenAICompatibleChat({ body, model, messages, temperature }) {
+  const cfg = getOpenAICompatibleConfig();
+  if (!cfg.ok) return cfg;
+
+  const upstreamUrl = buildUrl(cfg.baseUrl, cfg.chatPath);
+  const payload = {
+    ...(body && typeof body === "object" ? body : {}),
+    model,
+    messages,
+    stream: false,
+  };
+  delete payload.provider;
+  if (typeof temperature === "number") payload.temperature = temperature;
+
+  let upstreamResp;
+  try {
+    upstreamResp = await fetch(upstreamUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cfg.apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    return { ok: false, error: "Failed to connect upstream model service." };
+  }
+
+  const parsed = await readUpstreamJson(upstreamResp);
+  if (!parsed.ok) return parsed;
+  const data = parsed.data;
+
+  const assistant = normalizeAssistantFromUpstream(data);
+  if (!assistant) {
+    return { ok: false, error: "No assistant content from upstream." };
+  }
+
+  return {
+    ok: true,
+    id: data.id || null,
+    model: data.model || model,
+    assistant,
+    usage: data.usage || null,
+  };
+}
+
+async function forwardAnthropicChat({ body, model, messages, temperature }) {
+  const cfg = getAnthropicConfig();
+  if (!cfg.ok) return cfg;
+
+  const transformed = toAnthropicPayload(messages, model, temperature, body);
+  if (!transformed.ok) return transformed;
+
+  const upstreamUrl = buildUrl(cfg.baseUrl, cfg.messagesPath);
+
+  let upstreamResp;
+  try {
+    upstreamResp = await fetch(upstreamUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": cfg.apiKey,
+        "anthropic-version": cfg.version,
+      },
+      body: JSON.stringify(transformed.payload),
+    });
+  } catch {
+    return { ok: false, error: "Failed to connect anthropic service." };
+  }
+
+  const parsed = await readUpstreamJson(upstreamResp);
+  if (!parsed.ok) return parsed;
+  const data = parsed.data;
+
+  const assistant = normalizeAssistantFromAnthropic(data);
+  if (!assistant) {
+    return { ok: false, error: "No assistant content from anthropic." };
+  }
+
+  return {
+    ok: true,
+    id: data.id || null,
+    model: data.model || model,
+    assistant,
+    usage: data.usage || null,
+  };
+}
+
+async function forwardGeminiChat({ body, model, messages, temperature }) {
+  const cfg = getGeminiConfig();
+  if (!cfg.ok) return cfg;
+
+  const transformed = toGeminiPayload(messages, temperature, body);
+  if (!transformed.ok) return transformed;
+
+  const generatePath = resolveGeminiGeneratePath(cfg.generatePathTemplate, model);
+  const upstreamUrl = buildUrl(cfg.baseUrl, generatePath);
+
+  let upstreamResp;
+  try {
+    upstreamResp = await fetch(upstreamUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": cfg.apiKey,
+      },
+      body: JSON.stringify(transformed.payload),
+    });
+  } catch {
+    return { ok: false, error: "Failed to connect gemini service." };
+  }
+
+  const parsed = await readUpstreamJson(upstreamResp);
+  if (!parsed.ok) return parsed;
+  const data = parsed.data;
+
+  const assistant = normalizeAssistantFromGemini(data);
+  if (!assistant) {
+    return { ok: false, error: "No assistant content from gemini." };
+  }
+
+  return {
+    ok: true,
+    id: data.responseId || data.id || null,
+    model: data.modelVersion || model,
+    assistant,
+    usage: data.usageMetadata || data.usage || null,
+  };
+}
+
+function toAnthropicPayload(messages, model, temperature, body) {
+  const converted = convertMessagesForAnthropic(messages);
+  if (!converted.messages.length) {
+    return { ok: false, error: "No valid non-system messages to send to anthropic." };
+  }
+
+  const maxTokens =
+    toPositiveInt(body?.max_tokens) || toPositiveInt(body?.maxTokens) || toPositiveInt(process.env.ANTHROPIC_MAX_TOKENS) || 1024;
+
+  const payload = {
+    model,
+    messages: converted.messages,
+    max_tokens: maxTokens,
+  };
+  if (converted.system) payload.system = converted.system;
+  if (typeof temperature === "number") payload.temperature = temperature;
+
+  return { ok: true, payload };
+}
+
+function toGeminiPayload(messages, temperature, body) {
+  const converted = convertMessagesForGemini(messages);
+  if (!converted.contents.length) {
+    return { ok: false, error: "No valid messages to send to gemini." };
+  }
+
+  const payload = {
+    contents: converted.contents,
+  };
+  if (converted.systemInstruction) {
+    payload.system_instruction = { parts: [{ text: converted.systemInstruction }] };
+  }
+
+  const generationConfig = {};
+  if (typeof temperature === "number") generationConfig.temperature = temperature;
+  const maxOutputTokens =
+    toPositiveInt(body?.max_output_tokens) || toPositiveInt(body?.maxOutputTokens) || toPositiveInt(body?.max_tokens);
+  if (maxOutputTokens) generationConfig.maxOutputTokens = maxOutputTokens;
+  if (Object.keys(generationConfig).length) {
+    payload.generationConfig = generationConfig;
+  }
+
+  return { ok: true, payload };
+}
+
+function convertMessagesForAnthropic(messages) {
+  const converted = [];
+  const systemTexts = [];
+
+  for (const msg of Array.isArray(messages) ? messages : []) {
+    const role = String(msg?.role || "").toLowerCase();
+    if (role === "system") {
+      const sysText = flattenMessageText(normalizeMessageContent(msg?.content));
+      if (sysText) systemTexts.push(sysText);
+      continue;
+    }
+
+    const mappedRole = role === "assistant" ? "assistant" : "user";
+    const blocks = toAnthropicContentBlocks(msg?.content);
+    if (blocks.length) {
+      converted.push({ role: mappedRole, content: blocks });
+    }
+  }
+
+  return {
+    system: systemTexts.join("\n\n"),
+    messages: converted,
+  };
+}
+
+function convertMessagesForGemini(messages) {
+  const contents = [];
+  const systemTexts = [];
+
+  for (const msg of Array.isArray(messages) ? messages : []) {
+    const role = String(msg?.role || "").toLowerCase();
+    if (role === "system") {
+      const sysText = flattenMessageText(normalizeMessageContent(msg?.content));
+      if (sysText) systemTexts.push(sysText);
+      continue;
+    }
+
+    const mappedRole = role === "assistant" ? "model" : "user";
+    const parts = toGeminiParts(msg?.content);
+    if (parts.length) {
+      contents.push({ role: mappedRole, parts });
+    }
+  }
+
+  return {
+    systemInstruction: systemTexts.join("\n\n"),
+    contents,
+  };
+}
+
+function toAnthropicContentBlocks(content) {
+  const blocks = [];
+  for (const part of normalizeInputParts(content)) {
+    if (part.type === "text") {
+      if (part.text) blocks.push({ type: "text", text: part.text });
+      continue;
+    }
+
+    if (part.type === "image_url" && part.image_url?.url) {
+      const parsed = parseDataUrl(part.image_url.url);
+      if (parsed.base64 && parsed.mime.startsWith("image/")) {
+        blocks.push({
+          type: "image",
+          source: { type: "base64", media_type: parsed.mime, data: parsed.base64 },
+        });
+      } else {
+        blocks.push({ type: "text", text: "[鍥剧墖闄勪欢]" });
+      }
+      continue;
+    }
+
+    if (part.type === "input_audio") {
+      blocks.push({ type: "text", text: "[闊抽闄勪欢]" });
+      continue;
+    }
+
+    if (part.type === "file_url") {
+      const parsed = parseDataUrl(part.file_url.url);
+      const filename = part.file_url.filename ? ` ${part.file_url.filename}` : "";
+      if (parsed.base64 && parsed.mime.startsWith("image/")) {
+        blocks.push({
+          type: "image",
+          source: { type: "base64", media_type: parsed.mime, data: parsed.base64 },
+        });
+      } else {
+        blocks.push({ type: "text", text: `[鏂囦欢闄勪欢${filename}]` });
+      }
+      continue;
+    }
+  }
+
+  if (!blocks.length) {
+    blocks.push({ type: "text", text: "(绌烘秷鎭?" });
+  }
+  return blocks;
+}
+
+function toGeminiParts(content) {
+  const parts = [];
+  for (const part of normalizeInputParts(content)) {
+    if (part.type === "text") {
+      if (part.text) parts.push({ text: part.text });
+      continue;
+    }
+
+    if (part.type === "image_url" && part.image_url?.url) {
+      const parsed = parseDataUrl(part.image_url.url);
+      if (parsed.base64) {
+        parts.push({
+          inline_data: {
+            mime_type: parsed.mime || "image/png",
+            data: parsed.base64,
+          },
+        });
+      } else {
+        parts.push({ text: "[鍥剧墖闄勪欢]" });
+      }
+      continue;
+    }
+
+    if (part.type === "input_audio" && part.input_audio?.data) {
+      const format = normalizeAudioFormat(part.input_audio.format || "mp3");
+      parts.push({
+        inline_data: {
+          mime_type: `audio/${format}`,
+          data: part.input_audio.data,
+        },
+      });
+      continue;
+    }
+
+    if (part.type === "file_url" && part.file_url?.url) {
+      const parsed = parseDataUrl(part.file_url.url);
+      if (parsed.base64) {
+        parts.push({
+          inline_data: {
+            mime_type: parsed.mime || part.file_url.media_type || "application/octet-stream",
+            data: parsed.base64,
+          },
+        });
+      } else {
+        const filename = part.file_url.filename ? ` ${part.file_url.filename}` : "";
+        parts.push({ text: `[鏂囦欢闄勪欢${filename}]` });
+      }
+      continue;
+    }
+  }
+
+  if (!parts.length) {
+    parts.push({ text: "(绌烘秷鎭?" });
+  }
+  return parts;
+}
+
+function normalizeInputParts(content) {
+  if (typeof content === "string") {
+    return [{ type: "text", text: content }];
+  }
+  if (!Array.isArray(content)) {
+    if (content == null) return [];
+    if (typeof content === "object" && typeof content.text === "string") {
+      return [{ type: "text", text: content.text }];
+    }
+    return [{ type: "text", text: stringifyUnknown(content) }];
+  }
+
+  return content
+    .map((part) => {
+      if (typeof part === "string") {
+        return { type: "text", text: part };
+      }
+      if (!part || typeof part !== "object") return null;
+      if (typeof part.text === "string" && (part.type === "text" || part.type === "output_text" || part.type === "input_text")) {
+        return { type: "text", text: part.text };
+      }
+      if (part.type === "image_url" && part.image_url?.url) {
+        return { type: "image_url", image_url: { url: part.image_url.url } };
+      }
+      if (part.type === "input_audio" && part.input_audio?.data) {
+        return {
+          type: "input_audio",
+          input_audio: {
+            data: part.input_audio.data,
+            format: part.input_audio.format || "mp3",
+          },
+        };
+      }
+      if (part.type === "file_url" && part.file_url?.url) {
+        return {
+          type: "file_url",
+          file_url: {
+            url: part.file_url.url,
+            media_type: part.file_url.media_type || "",
+            filename: part.file_url.filename || "",
+          },
+        };
+      }
+      return { type: "text", text: stringifyUnknown(part) };
+    })
+    .filter(Boolean);
+}
+
+function getOpenAICompatibleConfig() {
+  const apiKey = (process.env.UPSTREAM_API_KEY || "").trim();
+  const baseUrl = (process.env.UPSTREAM_BASE_URL || "").trim();
+  const chatPath = (process.env.UPSTREAM_CHAT_PATH || "/v1/chat/completions").trim();
+  const modelsPath = (process.env.UPSTREAM_MODELS_PATH || "/v1/models").trim();
+  if (!apiKey || !baseUrl) {
+    return { ok: false, error: "Server not configured: missing UPSTREAM_API_KEY or UPSTREAM_BASE_URL." };
+  }
+  return { ok: true, apiKey, baseUrl, chatPath, modelsPath };
+}
+
+function getAnthropicConfig() {
+  const apiKey = (process.env.ANTHROPIC_API_KEY || "").trim();
+  const baseUrl = (process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").trim();
+  const messagesPath = (process.env.ANTHROPIC_MESSAGES_PATH || "/v1/messages").trim();
+  const modelsPath = (process.env.ANTHROPIC_MODELS_PATH || "/v1/models").trim();
+  const version = (process.env.ANTHROPIC_VERSION || "2023-06-01").trim();
+  if (!apiKey || !baseUrl) {
+    return { ok: false, error: "Server not configured: missing ANTHROPIC_API_KEY or ANTHROPIC_BASE_URL." };
+  }
+  return { ok: true, apiKey, baseUrl, messagesPath, modelsPath, version };
+}
+
+function getGeminiConfig() {
+  const apiKey = (process.env.GEMINI_API_KEY || "").trim();
+  const baseUrl = (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com").trim();
+  const generatePathTemplate = (process.env.GEMINI_GENERATE_PATH_TEMPLATE || "/v1beta/models/{model}:generateContent").trim();
+  const modelsPath = (process.env.GEMINI_MODELS_PATH || "/v1beta/models").trim();
+  if (!apiKey || !baseUrl) {
+    return { ok: false, error: "Server not configured: missing GEMINI_API_KEY or GEMINI_BASE_URL." };
+  }
+  return { ok: true, apiKey, baseUrl, generatePathTemplate, modelsPath };
+}
+
+function buildUrl(baseUrl, pathPart) {
+  return `${baseUrl.replace(/\/$/, "")}${String(pathPart || "").startsWith("/") ? pathPart : `/${pathPart}`}`;
+}
+
+function resolveGeminiGeneratePath(template, model) {
+  const rawModel = String(model || "").trim().replace(/^models\//, "");
+  const encodedModel = encodeURIComponent(rawModel);
+  if (String(template).includes("{model}")) {
+    return String(template).replace("{model}", encodedModel);
+  }
+  const clean = String(template || "").replace(/\/$/, "");
+  return `${clean}/${encodedModel}:generateContent`;
+}
+
+async function readUpstreamJson(resp) {
+  const text = await resp.text();
+  if (!resp.ok) {
+    return {
+      ok: false,
+      error: "Upstream request failed.",
+      upstreamStatus: resp.status,
+      detail: safeUpstreamError(text),
+    };
+  }
+
+  try {
+    return { ok: true, data: JSON.parse(text) };
+  } catch {
+    return { ok: false, error: "Upstream returned non-JSON response." };
+  }
+}
+
+function uniqueSorted(list) {
+  return [...new Set((list || []).filter(Boolean))].sort();
+}
+
+function toPositiveInt(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n);
+}
+
+function parseDataUrl(url) {
+  if (typeof url !== "string" || !url.startsWith("data:")) return { mime: "", base64: "" };
+  const comma = url.indexOf(",");
+  if (comma === -1) return { mime: "", base64: "" };
+  const meta = url.slice(5, comma);
+  const mime = (meta.split(";")[0] || "").trim();
+  const base64 = meta.includes(";base64") ? url.slice(comma + 1) : "";
+  return { mime: mime || "application/octet-stream", base64 };
+}
+
+function buildDataUrl(mime, base64) {
+  if (!base64) return "";
+  return `data:${mime || "application/octet-stream"};base64,${base64}`;
+}
+
+function normalizeAudioFormat(format) {
+  const f = String(format || "").toLowerCase();
+  if (f === "mpeg") return "mp3";
+  if (f === "wave" || f === "x-wav") return "wav";
+  return f || "mp3";
 }
 
 function safeUpstreamError(text) {
@@ -302,6 +821,77 @@ function normalizeAssistantFromUpstream(data) {
   if (!message) return null;
   const text = flattenMessageText(message.content);
   return { message, text };
+}
+
+function normalizeAssistantFromAnthropic(data) {
+  const parts = [];
+  if (Array.isArray(data?.content)) {
+    for (const block of data.content) {
+      if (block?.type === "text" && typeof block.text === "string") {
+        parts.push({ type: "text", text: block.text });
+      } else if (block?.type === "image" && block.source?.data) {
+        const mime = block.source.media_type || "image/png";
+        parts.push({ type: "image_url", image_url: { url: buildDataUrl(mime, block.source.data) } });
+      } else if (block && typeof block === "object") {
+        parts.push({ type: "text", text: stringifyUnknown(block) });
+      }
+    }
+  }
+
+  if (!parts.length && typeof data?.completion === "string" && data.completion.trim()) {
+    parts.push({ type: "text", text: data.completion });
+  }
+  if (!parts.length) return null;
+
+  const message = { role: "assistant", content: parts };
+  return { message, text: flattenMessageText(message.content) };
+}
+
+function normalizeAssistantFromGemini(data) {
+  const candidate = Array.isArray(data?.candidates)
+    ? data.candidates.find((item) => Array.isArray(item?.content?.parts))
+    : null;
+  const rawParts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+  const parts = [];
+
+  for (const part of rawParts) {
+    if (typeof part?.text === "string") {
+      parts.push({ type: "text", text: part.text });
+      continue;
+    }
+    const inline = part?.inline_data || part?.inlineData;
+    if (inline?.data) {
+      const mime = inline.mime_type || inline.mimeType || "application/octet-stream";
+      if (mime.startsWith("image/")) {
+        parts.push({ type: "image_url", image_url: { url: buildDataUrl(mime, inline.data) } });
+      } else if (mime.startsWith("audio/")) {
+        parts.push({
+          type: "input_audio",
+          input_audio: {
+            data: inline.data,
+            format: normalizeAudioFormat(mime.split("/")[1] || "mp3"),
+          },
+        });
+      } else {
+        parts.push({
+          type: "file_url",
+          file_url: {
+            url: buildDataUrl(mime, inline.data),
+            media_type: mime,
+            filename: "",
+          },
+        });
+      }
+      continue;
+    }
+    if (part && typeof part === "object") {
+      parts.push({ type: "text", text: stringifyUnknown(part) });
+    }
+  }
+
+  if (!parts.length) return null;
+  const message = { role: "assistant", content: parts };
+  return { message, text: flattenMessageText(message.content) };
 }
 
 function extractAssistantMessage(data) {
@@ -343,7 +933,7 @@ function normalizeMessageContent(content) {
   if (!Array.isArray(content)) {
     if (content == null) return "";
     if (typeof content === "object" && typeof content.text === "string") return content.text;
-    return JSON.stringify(content);
+    return stringifyUnknown(content);
   }
 
   return content
@@ -377,7 +967,7 @@ function normalizeMessageContent(content) {
           },
         };
       }
-      return part;
+      return { type: "text", text: stringifyUnknown(part) };
     })
     .filter(Boolean);
 }
@@ -401,6 +991,16 @@ function flattenMessageText(content) {
   }
 
   return texts.join("\n").trim();
+}
+
+function stringifyUnknown(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function readJsonBody(req) {
@@ -482,3 +1082,5 @@ function loadDotEnvLikeFile(filePath) {
     }
   }
 }
+
+

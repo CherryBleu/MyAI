@@ -8,6 +8,8 @@ directory = "./public"
 binding = "ASSETS"
 
 [vars]
+# 默认上游提供商：openai_compatible / anthropic / gemini
+UPSTREAM_PROVIDER = "openai_compatible"
 # 逗号分隔模型白名单。留空 = 不限制模型（允许手动输入任意模型）
 ALLOWED_MODELS = ""
 # 你的第三方 OpenAI 兼容 API 地址（不带末尾斜杠）
@@ -16,6 +18,15 @@ UPSTREAM_BASE_URL = "https://api.n1n.ai"
 UPSTREAM_CHAT_PATH = "/v1/chat/completions"
 # 上游模型列表接口路径（用于前端候选列表）
 UPSTREAM_MODELS_PATH = "/v1/models"
+# Anthropic 原生接口配置
+ANTHROPIC_BASE_URL = "https://api.anthropic.com"
+ANTHROPIC_MESSAGES_PATH = "/v1/messages"
+ANTHROPIC_MODELS_PATH = "/v1/models"
+ANTHROPIC_VERSION = "2023-06-01"
+# Gemini 原生接口配置
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com"
+GEMINI_GENERATE_PATH_TEMPLATE = "/v1beta/models/{model}:generateContent"
+GEMINI_MODELS_PATH = "/v1beta/models"
 # 可选：限制前端来源，逗号分隔。空表示允许所有来源
 ALLOWED_ORIGINS = ""
 # 朋友访问口令，逗号分隔，例如：alice123,bob456

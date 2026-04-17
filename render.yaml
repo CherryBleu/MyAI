@@ -10,11 +10,31 @@
         value: 22
       - key: UPSTREAM_BASE_URL
         sync: false
+      - key: UPSTREAM_PROVIDER
+        value: openai_compatible
       - key: UPSTREAM_CHAT_PATH
         value: /v1/chat/completions
       - key: UPSTREAM_MODELS_PATH
         value: /v1/models
       - key: UPSTREAM_API_KEY
+        sync: false
+      - key: ANTHROPIC_BASE_URL
+        value: https://api.anthropic.com
+      - key: ANTHROPIC_MESSAGES_PATH
+        value: /v1/messages
+      - key: ANTHROPIC_MODELS_PATH
+        value: /v1/models
+      - key: ANTHROPIC_VERSION
+        value: "2023-06-01"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_BASE_URL
+        value: https://generativelanguage.googleapis.com
+      - key: GEMINI_GENERATE_PATH_TEMPLATE
+        value: /v1beta/models/{model}:generateContent
+      - key: GEMINI_MODELS_PATH
+        value: /v1beta/models
+      - key: GEMINI_API_KEY
         sync: false
       - key: ALLOWED_MODELS
         value: ""

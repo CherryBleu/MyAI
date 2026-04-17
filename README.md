@@ -24,14 +24,31 @@
 ## 3. 配置
 
 先准备以下环境变量（Worker 可在 `wrangler.toml` 配，Node 云部署在平台控制台配）：
-- `UPSTREAM_BASE_URL`：第三方 API 域名（不带末尾 `/`）
-- `UPSTREAM_CHAT_PATH`：通常是 `/v1/chat/completions`
-- `UPSTREAM_MODELS_PATH`：通常是 `/v1/models`
+- `UPSTREAM_PROVIDER`：默认提供商（`openai_compatible` / `anthropic` / `gemini`）
 - `ALLOWED_MODELS`：逗号分隔模型白名单；留空表示不限制模型
 - `ACCESS_TOKENS`：给朋友发的访问口令（逗号分隔）
 - `ALLOWED_ORIGINS`：可选，限制来源域名
 - `RATE_LIMIT_PER_MIN`：每个口令每分钟请求上限；`0` 或负数表示不限制
 - `MAX_BODY_SIZE_MB`：仅 Node 服务端生效，控制单次请求体上限（默认 `100`，用于多媒体上传）
+
+OpenAI 兼容 provider 变量：
+- `UPSTREAM_API_KEY`
+- `UPSTREAM_BASE_URL`（不带末尾 `/`）
+- `UPSTREAM_CHAT_PATH`（默认 `/v1/chat/completions`）
+- `UPSTREAM_MODELS_PATH`（默认 `/v1/models`）
+
+Anthropic 原生 provider 变量：
+- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_BASE_URL`（默认 `https://api.anthropic.com`）
+- `ANTHROPIC_MESSAGES_PATH`（默认 `/v1/messages`）
+- `ANTHROPIC_MODELS_PATH`（默认 `/v1/models`）
+- `ANTHROPIC_VERSION`（默认 `2023-06-01`）
+
+Gemini 原生 provider 变量：
+- `GEMINI_API_KEY`
+- `GEMINI_BASE_URL`（默认 `https://generativelanguage.googleapis.com`）
+- `GEMINI_GENERATE_PATH_TEMPLATE`（默认 `/v1beta/models/{model}:generateContent`）
+- `GEMINI_MODELS_PATH`（默认 `/v1beta/models`）
 
 先安装依赖（PowerShell 建议用 `npm.cmd`）：
 
@@ -43,6 +60,8 @@ npm.cmd install
 
 ```bash
 npx wrangler secret put UPSTREAM_API_KEY
+npx wrangler secret put ANTHROPIC_API_KEY
+npx wrangler secret put GEMINI_API_KEY
 ```
 
 ## 4. 本地调试
@@ -53,10 +72,11 @@ npm.cmd run dev
 
 浏览器访问本地地址后：
 1. 在页面里填访问口令（你配置在 `ACCESS_TOKENS` 的值）。
-2. 模型列表会从 `/api/models` 拉取；若上游不支持列表接口，也可手动输入任意 OpenAI 兼容模型名（不局限 GPT）。
-3. 支持上传图片/音频/视频/文件（默认单文件 20MB、最多 5 个、总计 80MB；附件会以内联数据发送到上游）。
-4. 若当前模型不适配附件类型（如音频/视频/图片），前端会自动切换到更合适的模型并提示。
-5. 发送消息由 `/api/chat` 转发到上游。
+2. 在设置里选择 provider（OpenAI 兼容 / Anthropic / Gemini）。
+3. 模型列表会从 `/api/models?provider=...` 拉取；若上游不支持列表接口，也可手动输入模型名。
+4. 支持上传图片/音频/视频/文件（默认单文件 20MB、最多 5 个、总计 80MB；附件会以内联数据发送到上游）。
+5. 若当前模型不适配附件类型（如音频/视频/图片），前端会在当前 provider 下自动切换到更合适的模型并提示。
+6. 发送消息由 `/api/chat` 转发到上游。
 
 ### 手机直连本机（不依赖 workers.dev）
 
@@ -107,13 +127,15 @@ npm.cmd run start
 本地先用上面命令验证；云端平台会自动注入 `PORT`。
 
 必填环境变量（在平台控制台设置）：
-- `UPSTREAM_API_KEY`
-- `UPSTREAM_BASE_URL`
+- `UPSTREAM_PROVIDER`
 - `ACCESS_TOKENS`
+- 以及与 `UPSTREAM_PROVIDER` 对应的一组 Key / Base URL（见上方“配置”章节）
 
 可选环境变量：
-- `UPSTREAM_CHAT_PATH`（默认 `/v1/chat/completions`）
-- `UPSTREAM_MODELS_PATH`（默认 `/v1/models`）
+- `UPSTREAM_CHAT_PATH`（OpenAI 兼容默认 `/v1/chat/completions`）
+- `UPSTREAM_MODELS_PATH`（OpenAI 兼容默认 `/v1/models`）
+- `ANTHROPIC_MESSAGES_PATH`、`ANTHROPIC_MODELS_PATH`、`ANTHROPIC_VERSION`
+- `GEMINI_GENERATE_PATH_TEMPLATE`、`GEMINI_MODELS_PATH`
 - `ALLOWED_MODELS`（留空=不限模型）
 - `ALLOWED_ORIGINS`（留空=不限制来源）
 - `RATE_LIMIT_PER_MIN`（`0`=不限流）

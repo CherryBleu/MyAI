@@ -1,8 +1,18 @@
 ﻿# Local dev only
+UPSTREAM_PROVIDER=openai_compatible
 UPSTREAM_API_KEY=replace-with-your-real-key
 UPSTREAM_BASE_URL=https://example.com
 UPSTREAM_CHAT_PATH=/v1/chat/completions
 UPSTREAM_MODELS_PATH=/v1/models
+ANTHROPIC_API_KEY=
+ANTHROPIC_BASE_URL=https://api.anthropic.com
+ANTHROPIC_MESSAGES_PATH=/v1/messages
+ANTHROPIC_MODELS_PATH=/v1/models
+ANTHROPIC_VERSION=2023-06-01
+GEMINI_API_KEY=
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+GEMINI_GENERATE_PATH_TEMPLATE=/v1beta/models/{model}:generateContent
+GEMINI_MODELS_PATH=/v1beta/models
 ALLOWED_MODELS=
 ACCESS_TOKENS=change-this-token
 ALLOWED_ORIGINS=
