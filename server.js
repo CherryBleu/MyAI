@@ -6,7 +6,7 @@ const { URL } = require("node:url");
 loadDotEnvLikeFile(path.join(process.cwd(), ".dev.vars"));
 
 const PORT = Number(process.env.PORT || 8787);
-const MAX_BODY_BYTES = Math.max(1, Number(process.env.MAX_BODY_SIZE_MB || 25)) * 1024 * 1024;
+const MAX_BODY_BYTES = Math.max(1, Number(process.env.MAX_BODY_SIZE_MB || 100)) * 1024 * 1024;
 const PUBLIC_DIR = path.join(process.cwd(), "public");
 const memoryBuckets = new Map();
 

@@ -25,4 +25,4 @@
       - key: RATE_LIMIT_PER_MIN
         value: "0"
       - key: MAX_BODY_SIZE_MB
-        value: "25"
+        value: "100"

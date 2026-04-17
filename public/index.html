@@ -428,6 +428,7 @@
           <input id="model" list="modelOptions" placeholder="例如：qwen-plus / claude-3-7-sonnet" />
           <datalist id="modelOptions"></datalist>
           <div class="hint" id="modelHint">支持任意 OpenAI 兼容模型名，可手动输入。</div>
+          <div class="hint" id="autoModelNotice"></div>
         </div>
       </section>
 
@@ -452,7 +453,7 @@
             hidden
             accept="image/*,audio/*,video/*,.pdf,.txt,.md,.csv,.json,.doc,.docx,.xls,.xlsx"
           />
-          <div class="hint" id="attachHint">单个文件不超过 8MB，最多 5 个。</div>
+          <div class="hint" id="attachHint">单个文件不超过 20MB，最多 5 个。</div>
           <div class="attach-list" id="attachList"></div>
         </div>
         <div class="actions">
@@ -464,13 +465,14 @@
 
     <script>
       const MAX_FILE_COUNT = 5;
-      const MAX_FILE_SIZE = 8 * 1024 * 1024;
-      const MAX_TOTAL_SIZE = 20 * 1024 * 1024;
+      const MAX_FILE_SIZE = 20 * 1024 * 1024;
+      const MAX_TOTAL_SIZE = 80 * 1024 * 1024;
 
       const state = {
         messages: [],
         loading: false,
         pendingFiles: [],
+        availableModels: [],
       };
 
       const els = {
@@ -481,6 +483,7 @@
         model: document.getElementById("model"),
         modelOptions: document.getElementById("modelOptions"),
         modelHint: document.getElementById("modelHint"),
+        autoModelNotice: document.getElementById("autoModelNotice"),
         chat: document.getElementById("chat"),
         input: document.getElementById("input"),
         pickFilesBtn: document.getElementById("pickFilesBtn"),
@@ -534,6 +537,7 @@
 
         els.model.addEventListener("change", () => {
           localStorage.setItem("myai_model", els.model.value.trim());
+          setAutoModelNotice("");
         });
 
         els.input.addEventListener("keydown", (e) => {
@@ -559,6 +563,7 @@
 
           els.modelOptions.innerHTML = "";
           const models = Array.isArray(data.models) ? data.models : [];
+          state.availableModels = models.slice();
           for (const m of models) {
             const opt = document.createElement("option");
             opt.value = m;
@@ -584,6 +589,7 @@
             setStatus("请手动输入模型名后发送。");
           }
         } catch (e) {
+          state.availableModels = [];
           els.modelHint.textContent = "模型列表加载失败时，也可以手动输入任意 OpenAI 兼容模型名。";
           setStatus(`模型加载失败：${e.message}`, true);
         }
@@ -662,7 +668,17 @@
           return;
         }
 
-        localStorage.setItem("myai_model", selectedModel);
+        const modelDecision = chooseModelForAttachments(selectedModel, state.pendingFiles, state.availableModels);
+        const modelToUse = modelDecision.model;
+        localStorage.setItem("myai_model", modelToUse);
+        if (modelDecision.switched) {
+          els.model.value = modelToUse;
+          const notice = `检测到${modelDecision.reasonLabel}，已自动切换模型：${selectedModel} -> ${modelToUse}`;
+          setAutoModelNotice(notice);
+          setStatus(notice);
+        } else {
+          setAutoModelNotice("");
+        }
 
         const userMessage = {
           role: "user",
@@ -690,7 +706,7 @@
               ...tokenHeaders(),
             },
             body: JSON.stringify({
-              model: selectedModel,
+              model: modelToUse,
               messages: state.messages,
             }),
           });
@@ -715,6 +731,7 @@
         state.messages = [];
         state.pendingFiles = [];
         els.fileInput.value = "";
+        setAutoModelNotice("");
         saveMessages();
         renderMessages();
         renderPendingFiles();
@@ -729,6 +746,128 @@
       function setStatus(text, isError = false) {
         els.status.textContent = text;
         els.status.classList.toggle("error", !!isError);
+      }
+
+      function setAutoModelNotice(text) {
+        els.autoModelNotice.textContent = text || "";
+      }
+
+      function chooseModelForAttachments(currentModel, files, availableModels) {
+        const requirement = detectAttachmentRequirement(files);
+        if (!requirement.need) {
+          return { model: currentModel, switched: false, reasonLabel: "" };
+        }
+
+        if (modelSupportsRequirement(currentModel, requirement.need)) {
+          return { model: currentModel, switched: false, reasonLabel: requirement.label };
+        }
+
+        const candidates = uniqueModels([
+          ...(Array.isArray(availableModels) ? availableModels : []),
+          currentModel,
+          ...fallbackModelsByRequirement(requirement.need),
+        ]);
+
+        const best = pickBestModelForRequirement(candidates, requirement.need);
+        if (!best || best === currentModel) {
+          return { model: currentModel, switched: false, reasonLabel: requirement.label };
+        }
+
+        return { model: best, switched: true, reasonLabel: requirement.label };
+      }
+
+      function detectAttachmentRequirement(files) {
+        const list = Array.isArray(files) ? files : [];
+        const hasVideo = list.some((f) => isVideoMime(f?.mimeType));
+        if (hasVideo) return { need: "video", label: "视频附件" };
+
+        const hasAudio = list.some((f) => isAudioMime(f?.mimeType));
+        if (hasAudio) return { need: "audio", label: "音频附件" };
+
+        const hasImage = list.some((f) => isImageMime(f?.mimeType));
+        if (hasImage) return { need: "image", label: "图片附件" };
+
+        const hasFile = list.some((f) => !isImageMime(f?.mimeType) && !isAudioMime(f?.mimeType) && !isVideoMime(f?.mimeType));
+        if (hasFile) return { need: "file", label: "文件附件" };
+
+        return { need: "", label: "" };
+      }
+
+      function modelSupportsRequirement(modelName, requirement) {
+        if (!modelName) return false;
+        const caps = detectModelCapabilities(modelName);
+        if (requirement === "video") return caps.video;
+        if (requirement === "audio") return caps.audio;
+        if (requirement === "image") return caps.image;
+        if (requirement === "file") return caps.file;
+        return true;
+      }
+
+      function detectModelCapabilities(modelName) {
+        const m = String(modelName || "").toLowerCase();
+        const image =
+          /vision|vl|4o|4\.1|omni|gemini|claude|pixtral|glm-4v|llava|internvl|qvq|qwen-vl|grok-vision/.test(m);
+        const audio = /audio|speech|voice|4o|omni|gemini|qwen-audio|whisper/.test(m);
+        const video = /video|gemini|qwen-vl|max|omni|4o|4\.1/.test(m);
+        const file = image || /file|pdf|doc|document|long|gemini|claude|4o|4\.1|qwen-long/.test(m);
+        return { image, audio, video, file };
+      }
+
+      function fallbackModelsByRequirement(requirement) {
+        if (requirement === "video") {
+          return ["gemini-2.0-flash", "gemini-1.5-pro", "qwen-vl-max", "gpt-4.1"];
+        }
+        if (requirement === "audio") {
+          return ["gpt-4o-audio-preview", "gpt-4o-mini-audio-preview", "qwen-audio", "gemini-2.0-flash"];
+        }
+        if (requirement === "image") {
+          return ["gpt-4.1", "gpt-4o", "qwen-vl-plus", "gemini-2.0-flash", "claude-3-7-sonnet"];
+        }
+        if (requirement === "file") {
+          return ["gpt-4.1", "gpt-4o", "claude-3-7-sonnet", "gemini-2.0-flash"];
+        }
+        return [];
+      }
+
+      function pickBestModelForRequirement(models, requirement) {
+        let best = "";
+        let bestScore = -1;
+        for (const model of models) {
+          const score = scoreModelForRequirement(model, requirement);
+          if (score > bestScore) {
+            bestScore = score;
+            best = model;
+          }
+        }
+        return best;
+      }
+
+      function scoreModelForRequirement(model, requirement) {
+        if (!model || !modelSupportsRequirement(model, requirement)) return -1;
+        const m = model.toLowerCase();
+
+        const rank = (patterns) => {
+          const idx = patterns.findIndex((p) => p.test(m));
+          return idx === -1 ? 0 : patterns.length - idx;
+        };
+
+        if (requirement === "video") {
+          return 100 + rank([/video/, /gemini/, /qwen-vl/, /vl/, /4\.1/, /4o/]);
+        }
+        if (requirement === "audio") {
+          return 100 + rank([/audio/, /speech/, /voice/, /4o/, /gemini/, /qwen-audio/]);
+        }
+        if (requirement === "image") {
+          return 100 + rank([/vision/, /vl/, /4\.1/, /4o/, /gemini/, /claude/, /pixtral/]);
+        }
+        if (requirement === "file") {
+          return 100 + rank([/file/, /pdf/, /doc/, /long/, /4\.1/, /4o/, /gemini/, /claude/]);
+        }
+        return 1;
+      }
+
+      function uniqueModels(models) {
+        return [...new Set((models || []).map((m) => String(m || "").trim()).filter(Boolean))];
       }
 
       function renderPendingFiles() {
