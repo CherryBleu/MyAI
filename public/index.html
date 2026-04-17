@@ -26,6 +26,11 @@
         box-sizing: border-box;
       }
 
+      html,
+      body {
+        min-height: 100%;
+      }
+
       body {
         margin: 0;
         color: var(--text);
@@ -36,34 +41,151 @@
         font-family: "Google Sans", "Inter", "PingFang SC", "Segoe UI", sans-serif;
       }
 
+      html.auth-locked,
+      body.auth-locked {
+        height: 100dvh;
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
+
       .auth-gate {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        min-height: 100dvh;
+        overflow: hidden;
+        background:
+          radial-gradient(900px 380px at 50% 100%, rgba(60, 96, 255, 0.2) 0%, rgba(60, 96, 255, 0) 58%),
+          radial-gradient(560px 280px at 50% 20%, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 70%),
+          #050608;
+        color: #f5f7fb;
+      }
+
+      .auth-gate[hidden] {
+        display: none;
+      }
+
+      .auth-shell {
         min-height: 100dvh;
         display: grid;
+        grid-template-rows: auto 1fr;
+        padding: 22px 22px calc(22px + env(safe-area-inset-bottom));
+        overflow: auto;
+      }
+
+      .auth-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .auth-stage {
+        display: grid;
         place-items: center;
-        padding: 18px;
+        padding: 28px 0;
+      }
+
+      .auth-center {
+        width: min(560px, 100%);
+        display: grid;
+        gap: 18px;
+      }
+
+      .auth-copy {
+        display: grid;
+        gap: 8px;
+      }
+
+      .auth-kicker {
+        font-size: 18px;
+        color: rgba(255, 255, 255, 0.82);
+      }
+
+      .auth-title {
+        margin: 0;
+        font-size: clamp(32px, 6vw, 48px);
+        line-height: 1.08;
+        letter-spacing: -0.04em;
       }
 
       .auth-card {
-        width: min(420px, 100%);
-        border: 1px solid var(--line);
-        border-radius: 20px;
-        background: rgba(255, 255, 255, 0.92);
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(8px);
+        width: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 28px;
+        background: linear-gradient(180deg, rgba(28, 30, 36, 0.92), rgba(17, 18, 24, 0.96));
+        box-shadow: 0 28px 80px rgba(0, 0, 0, 0.38);
+        backdrop-filter: blur(12px);
         padding: 18px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .auth-prompt {
+        font-size: 14px;
+        color: rgba(255, 255, 255, 0.72);
+      }
+
+      .auth-entry {
         display: grid;
         gap: 12px;
       }
 
-      .auth-card h2 {
-        margin: 0;
-        font-size: 20px;
+      .auth-card label {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.5);
+      }
+
+      .auth-card input {
+        border-color: rgba(255, 255, 255, 0.08);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.06);
+        color: #fff;
+        min-height: 58px;
+        padding: 0 18px;
+      }
+
+      .auth-card input::placeholder {
+        color: rgba(255, 255, 255, 0.35);
+      }
+
+      .auth-card input:focus {
+        border-color: rgba(137, 173, 255, 0.8);
+        box-shadow: 0 0 0 4px rgba(83, 127, 255, 0.18);
+      }
+
+      .auth-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .auth-submit {
+        min-width: 120px;
+        border-radius: 18px;
+      }
+
+      .auth-quick-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .auth-quick-chip {
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.04);
+        color: rgba(255, 255, 255, 0.82);
+        border-radius: 999px;
+        padding: 9px 12px;
+        font-size: 12px;
       }
 
       .auth-error {
         min-height: 18px;
         font-size: 12px;
-        color: var(--danger);
+        color: #ff8b8b;
       }
 
       .app-hidden {
@@ -566,6 +688,25 @@
         }
       }
 
+      @media (max-width: 640px) {
+        .auth-shell {
+          padding: 16px 16px calc(18px + env(safe-area-inset-bottom));
+        }
+
+        .auth-center {
+          gap: 14px;
+        }
+
+        .auth-card {
+          border-radius: 22px;
+          padding: 14px;
+        }
+
+        .auth-card input {
+          min-height: 54px;
+        }
+      }
+
       @media (prefers-reduced-motion: reduce) {
         * {
           animation: none !important;
@@ -574,20 +715,41 @@
       }
     </style>
   </head>
-  <body>
+  <body class="auth-locked">
     <section class="auth-gate" id="authGate">
-      <div class="auth-card">
-        <div class="brand">
-          <span class="logo-dot" aria-hidden="true"></span>
-          <h2>MyAI 访问验证</h2>
+      <div class="auth-shell">
+        <header class="auth-topbar">
+          <div class="brand">
+            <span class="logo-dot" aria-hidden="true"></span>
+            <h1>MyAI</h1>
+          </div>
+        </header>
+        <div class="auth-stage">
+          <div class="auth-center">
+            <div class="auth-copy">
+              <div class="auth-kicker">欢迎回来</div>
+              <h2 class="auth-title">输入访问 Token 后继续使用</h2>
+            </div>
+            <div class="auth-card">
+              <div class="auth-prompt">这个入口页会在验证前独立占满整屏，不会通过滚动露出主界面。</div>
+              <div class="auth-entry">
+                <div class="row">
+                  <label for="authToken">访问口令</label>
+                  <input id="authToken" type="password" placeholder="输入访问 token" autocomplete="current-password" />
+                </div>
+                <div class="auth-actions">
+                  <div class="auth-quick-actions" aria-hidden="true">
+                    <span class="auth-quick-chip">私有入口</span>
+                    <span class="auth-quick-chip">Cookie 历史</span>
+                    <span class="auth-quick-chip">模型直观选择</span>
+                  </div>
+                  <button class="send-btn auth-submit" id="authSubmit" type="button">进入页面</button>
+                </div>
+              </div>
+              <div class="auth-error" id="authError"></div>
+            </div>
+          </div>
         </div>
-        <div class="hint">请输入访问 token，验证通过后才能进入聊天页面。</div>
-        <div class="row">
-          <label for="authToken">访问口令</label>
-          <input id="authToken" type="password" placeholder="输入访问 token" />
-        </div>
-        <button class="send-btn" id="authSubmit" type="button">进入页面</button>
-        <div class="auth-error" id="authError"></div>
       </div>
     </section>
 
@@ -859,12 +1021,16 @@
       }
 
       function lockApp(message = "") {
+        document.documentElement.classList.add("auth-locked");
+        document.body.classList.add("auth-locked");
         els.appShell.classList.add("app-hidden");
         els.authGate.hidden = false;
         els.authError.textContent = message || "";
       }
 
       function unlockApp() {
+        document.documentElement.classList.remove("auth-locked");
+        document.body.classList.remove("auth-locked");
         els.appShell.classList.remove("app-hidden");
         els.authGate.hidden = true;
         els.authError.textContent = "";
