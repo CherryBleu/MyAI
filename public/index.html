@@ -1,0 +1,565 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7f9fc" />
+    <title>MyAI Mobile</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <style>
+      :root {
+        --bg: #f7f9fc;
+        --surface: #ffffff;
+        --surface-soft: #f3f6fb;
+        --text: #1f2937;
+        --muted: #667085;
+        --line: #e4e7ec;
+        --primary: #5a6af2;
+        --primary-2: #63a5ff;
+        --user-bubble: #dbe9ff;
+        --assistant-bubble: #ffffff;
+        --danger: #b42318;
+        --shadow: 0 12px 28px rgba(16, 24, 40, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--text);
+        background:
+          radial-gradient(1200px 500px at 12% -15%, #e7eeff 0%, rgba(231, 238, 255, 0) 55%),
+          radial-gradient(900px 520px at 110% 0%, #e5f2ff 0%, rgba(229, 242, 255, 0) 60%),
+          var(--bg);
+        font-family: "Google Sans", "Inter", "PingFang SC", "Segoe UI", sans-serif;
+      }
+
+      .app {
+        min-height: 100dvh;
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        gap: 12px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .logo-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #4f8ef7, #6758ff);
+        box-shadow: 0 0 0 6px rgba(90, 106, 242, 0.12);
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: clamp(18px, 2.8vw, 22px);
+        font-weight: 600;
+      }
+
+      .top-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .chip-btn {
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.92);
+        color: #344054;
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-size: 13px;
+        transition: background 0.2s ease, border-color 0.2s ease;
+      }
+
+      .chip-btn:active {
+        background: #eef2f8;
+      }
+
+      .settings {
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 12px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(8px);
+        display: grid;
+        gap: 10px;
+        transform-origin: top;
+        transition: max-height 0.25s ease, opacity 0.25s ease, padding 0.25s ease;
+        max-height: 360px;
+        opacity: 1;
+      }
+
+      .settings.collapsed {
+        max-height: 0;
+        opacity: 0;
+        overflow: hidden;
+        padding-top: 0;
+        padding-bottom: 0;
+        border-color: transparent;
+      }
+
+      .grid {
+        display: grid;
+        gap: 10px;
+      }
+
+      .row {
+        display: grid;
+        gap: 6px;
+      }
+
+      label {
+        font-size: 11px;
+        color: var(--muted);
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        color: var(--text);
+        font-size: 14px;
+        padding: 10px 12px;
+        outline: none;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      input:focus,
+      textarea:focus {
+        border-color: #b8c2ff;
+        box-shadow: 0 0 0 4px rgba(90, 106, 242, 0.12);
+      }
+
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .chat-wrap {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.92));
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(8px);
+        display: grid;
+        grid-template-rows: 1fr;
+        min-height: 38vh;
+      }
+
+      .chat {
+        overflow: auto;
+        padding: 16px;
+        display: grid;
+        align-content: start;
+        gap: 12px;
+      }
+
+      .msg {
+        max-width: min(760px, 88%);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 12px 14px;
+        line-height: 1.55;
+        font-size: 14px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        animation: fadeUp 0.2s ease;
+      }
+
+      .assistant {
+        justify-self: start;
+        background: var(--assistant-bubble);
+      }
+
+      .user {
+        justify-self: end;
+        background: var(--user-bubble);
+        border-color: #bfd3ff;
+      }
+
+      .msg-empty {
+        justify-self: center;
+        text-align: center;
+        color: var(--muted);
+        background: var(--surface-soft);
+      }
+
+      .composer {
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(8px);
+        padding: 12px;
+        display: grid;
+        gap: 10px;
+      }
+
+      textarea {
+        min-height: 92px;
+        resize: vertical;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .status {
+        min-height: 18px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .send-btn {
+        border: 0;
+        border-radius: 12px;
+        padding: 10px 14px;
+        color: white;
+        font-size: 14px;
+        font-weight: 600;
+        background: linear-gradient(135deg, var(--primary), var(--primary-2));
+        min-width: 88px;
+        transition: transform 0.15s ease, opacity 0.15s ease;
+      }
+
+      .send-btn:active {
+        transform: translateY(1px);
+      }
+
+      .send-btn[disabled] {
+        opacity: 0.75;
+      }
+
+      .send-btn.loading::after {
+        content: " ...";
+        animation: blink 1s steps(2, start) infinite;
+      }
+
+      @keyframes fadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes blink {
+        50% {
+          opacity: 0.45;
+        }
+      }
+
+      @media (min-width: 860px) {
+        .grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="logo-dot" aria-hidden="true"></span>
+          <h1>MyAI</h1>
+        </div>
+        <div class="top-actions">
+          <button class="chip-btn" id="settingsToggle" type="button">设置</button>
+          <button class="chip-btn" id="clearBtn" type="button">清空</button>
+        </div>
+      </header>
+
+      <section class="settings collapsed" id="settingsPanel">
+        <div class="grid">
+          <div class="row">
+            <label for="apiBase">接口地址（默认当前域名）</label>
+            <input id="apiBase" placeholder="https://your-domain.example" />
+          </div>
+          <div class="row">
+            <label for="token">访问口令（不是上游 API Key）</label>
+            <input id="token" type="password" placeholder="向你领取的口令" />
+          </div>
+        </div>
+        <div class="row">
+          <label for="model">模型</label>
+          <input id="model" list="modelOptions" placeholder="例如：gpt-4.1-mini" />
+          <datalist id="modelOptions"></datalist>
+          <div class="hint" id="modelHint">可手动输入模型名。</div>
+        </div>
+      </section>
+
+      <section class="chat-wrap">
+        <section class="chat" id="chat"></section>
+      </section>
+
+      <section class="composer">
+        <div class="row">
+          <label for="input">输入</label>
+          <textarea id="input" placeholder="输入你想问的问题"></textarea>
+        </div>
+        <div class="actions">
+          <div class="status" id="status"></div>
+          <button class="send-btn" id="sendBtn" type="button">发送</button>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const state = {
+        messages: [],
+        loading: false,
+      };
+
+      const els = {
+        settingsPanel: document.getElementById("settingsPanel"),
+        settingsToggle: document.getElementById("settingsToggle"),
+        apiBase: document.getElementById("apiBase"),
+        token: document.getElementById("token"),
+        model: document.getElementById("model"),
+        modelOptions: document.getElementById("modelOptions"),
+        modelHint: document.getElementById("modelHint"),
+        chat: document.getElementById("chat"),
+        input: document.getElementById("input"),
+        sendBtn: document.getElementById("sendBtn"),
+        clearBtn: document.getElementById("clearBtn"),
+        status: document.getElementById("status"),
+      };
+
+      init();
+
+      async function init() {
+        els.apiBase.value = localStorage.getItem("myai_api_base") || "";
+        els.token.value = localStorage.getItem("myai_access_token") || "";
+        els.model.value = localStorage.getItem("myai_model") || "";
+        restoreMessages();
+        renderMessages();
+        attachEvents();
+        await loadModels();
+        if ("serviceWorker" in navigator) {
+          try {
+            await navigator.serviceWorker.register("/sw.js");
+          } catch {}
+        }
+      }
+
+      function attachEvents() {
+        els.settingsToggle.addEventListener("click", () => {
+          const collapsed = els.settingsPanel.classList.toggle("collapsed");
+          els.settingsToggle.textContent = collapsed ? "设置" : "收起";
+        });
+
+        els.sendBtn.addEventListener("click", onSend);
+        els.clearBtn.addEventListener("click", onClear);
+
+        els.apiBase.addEventListener("change", () => {
+          localStorage.setItem("myai_api_base", els.apiBase.value.trim());
+          loadModels();
+        });
+
+        els.token.addEventListener("change", () => {
+          localStorage.setItem("myai_access_token", els.token.value.trim());
+          loadModels();
+        });
+
+        els.model.addEventListener("change", () => {
+          localStorage.setItem("myai_model", els.model.value.trim());
+        });
+
+        els.input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            onSend();
+          }
+        });
+      }
+
+      function apiBase() {
+        return (els.apiBase.value || "").trim() || location.origin;
+      }
+
+      async function loadModels() {
+        setStatus("正在加载模型列表...");
+        try {
+          const resp = await fetch(`${apiBase()}/api/models`, {
+            headers: tokenHeaders(),
+          });
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.error || "加载失败");
+
+          els.modelOptions.innerHTML = "";
+          const models = Array.isArray(data.models) ? data.models : [];
+          for (const m of models) {
+            const opt = document.createElement("option");
+            opt.value = m;
+            els.modelOptions.appendChild(opt);
+          }
+
+          if (!els.model.value && models.length) {
+            els.model.value = models[0];
+            localStorage.setItem("myai_model", els.model.value);
+          }
+
+          if (data.source === "allowlist") {
+            els.modelHint.textContent = "当前为服务端白名单模式，仅可用列表内模型。";
+          } else if (models.length) {
+            els.modelHint.textContent = "已拉取上游模型列表，也可手动输入模型名。";
+          } else {
+            els.modelHint.textContent = "未拉取到模型列表，可手动输入模型名。";
+          }
+
+          if (els.model.value) {
+            setStatus("模型已就绪。");
+          } else {
+            setStatus("请手动输入模型名后发送。");
+          }
+        } catch (e) {
+          els.modelHint.textContent = "模型列表加载失败时，也可以手动输入模型名。";
+          setStatus(`模型加载失败：${e.message}`, true);
+        }
+      }
+
+      async function onSend() {
+        if (state.loading) return;
+
+        const content = els.input.value.trim();
+        const selectedModel = els.model.value.trim();
+        if (!content) return;
+        if (!selectedModel) {
+          setStatus("请先输入模型名。", true);
+          return;
+        }
+
+        localStorage.setItem("myai_model", selectedModel);
+        state.messages.push({ role: "user", content });
+        els.input.value = "";
+        saveMessages();
+        renderMessages();
+
+        state.loading = true;
+        els.sendBtn.disabled = true;
+        els.sendBtn.classList.add("loading");
+        setStatus("思考中...");
+
+        try {
+          const resp = await fetch(`${apiBase()}/api/chat`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...tokenHeaders(),
+            },
+            body: JSON.stringify({
+              model: selectedModel,
+              messages: state.messages,
+            }),
+          });
+
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.error || "请求失败");
+
+          state.messages.push({ role: "assistant", content: data.content || "(空回复)" });
+          saveMessages();
+          renderMessages();
+          setStatus("完成");
+        } catch (e) {
+          setStatus(`发送失败：${e.message}`, true);
+        } finally {
+          state.loading = false;
+          els.sendBtn.disabled = false;
+          els.sendBtn.classList.remove("loading");
+        }
+      }
+
+      function onClear() {
+        state.messages = [];
+        saveMessages();
+        renderMessages();
+        setStatus("已清空会话。");
+      }
+
+      function tokenHeaders() {
+        const token = (els.token.value || "").trim();
+        return token ? { "X-Client-Token": token } : {};
+      }
+
+      function setStatus(text, isError = false) {
+        els.status.textContent = text;
+        els.status.classList.toggle("error", !!isError);
+      }
+
+      function renderMessages() {
+        els.chat.innerHTML = "";
+
+        if (!state.messages.length) {
+          const empty = document.createElement("div");
+          empty.className = "msg assistant msg-empty";
+          empty.textContent = "你好，我可以帮你解答问题。";
+          els.chat.appendChild(empty);
+          return;
+        }
+
+        for (const msg of state.messages) {
+          const div = document.createElement("div");
+          div.className = `msg ${msg.role === "user" ? "user" : "assistant"}`;
+          div.textContent = msg.content;
+          els.chat.appendChild(div);
+        }
+
+        els.chat.scrollTop = els.chat.scrollHeight;
+      }
+
+      function saveMessages() {
+        localStorage.setItem("myai_messages", JSON.stringify(state.messages.slice(-30)));
+      }
+
+      function restoreMessages() {
+        try {
+          const v = localStorage.getItem("myai_messages");
+          state.messages = v ? JSON.parse(v) : [];
+          if (!Array.isArray(state.messages)) state.messages = [];
+        } catch {
+          state.messages = [];
+        }
+      }
+    </script>
+  </body>
+</html>

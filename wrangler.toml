@@ -1,0 +1,24 @@
+﻿name = "mobile-llm-share"
+main = "worker.js"
+compatibility_date = "2026-04-15"
+workers_dev = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[vars]
+# 逗号分隔模型白名单。留空 = 不限制模型（允许手动输入任意模型）
+ALLOWED_MODELS = ""
+# 你的第三方 OpenAI 兼容 API 地址（不带末尾斜杠）
+UPSTREAM_BASE_URL = "https://api.n1n.ai"
+# 上游 chat 接口路径
+UPSTREAM_CHAT_PATH = "/v1/chat/completions"
+# 上游模型列表接口路径（用于前端候选列表）
+UPSTREAM_MODELS_PATH = "/v1/models"
+# 可选：限制前端来源，逗号分隔。空表示允许所有来源
+ALLOWED_ORIGINS = ""
+# 朋友访问口令，逗号分隔，例如：alice123,bob456
+ACCESS_TOKENS = "xicha"
+# 同一口令每分钟最多请求数。<=0 表示不限制
+RATE_LIMIT_PER_MIN = "0"
