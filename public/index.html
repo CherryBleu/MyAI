@@ -36,6 +36,40 @@
         font-family: "Google Sans", "Inter", "PingFang SC", "Segoe UI", sans-serif;
       }
 
+      .auth-gate {
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 18px;
+      }
+
+      .auth-card {
+        width: min(420px, 100%);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(8px);
+        padding: 18px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .auth-card h2 {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      .auth-error {
+        min-height: 18px;
+        font-size: 12px;
+        color: var(--danger);
+      }
+
+      .app-hidden {
+        display: none;
+      }
+
       .app {
         min-height: 100dvh;
         max-width: 980px;
@@ -103,7 +137,7 @@
         gap: 10px;
         transform-origin: top;
         transition: max-height 0.25s ease, opacity 0.25s ease, padding 0.25s ease;
-        max-height: 360px;
+        max-height: 760px;
         opacity: 1;
       }
 
@@ -160,6 +194,110 @@
         color: var(--muted);
       }
 
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .history-list {
+        display: grid;
+        gap: 8px;
+        max-height: 180px;
+        overflow: auto;
+        padding-right: 2px;
+      }
+
+      .history-item {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        padding: 8px 10px;
+        text-align: left;
+        display: grid;
+        gap: 4px;
+      }
+
+      .history-item.active {
+        border-color: #9eb4ff;
+        background: #edf3ff;
+      }
+
+      .history-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: #344054;
+      }
+
+      .history-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .model-table-wrap {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: auto;
+        max-height: 230px;
+        background: #fff;
+      }
+
+      .model-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+
+      .model-table th,
+      .model-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #eef1f6;
+        text-align: left;
+        vertical-align: middle;
+      }
+
+      .model-table th {
+        position: sticky;
+        top: 0;
+        background: #f9fbff;
+        z-index: 1;
+        color: #667085;
+        font-weight: 600;
+      }
+
+      .model-table tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .model-row {
+        cursor: pointer;
+      }
+
+      .model-row.active {
+        background: #ecf2ff;
+      }
+
+      .cap-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+
+      .cap-chip {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 2px 6px;
+        font-size: 10px;
+        background: #eef2f8;
+        color: #475467;
+      }
+
       .chat-wrap {
         background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.92));
         border: 1px solid var(--line);
@@ -174,13 +312,50 @@
       .chat {
         overflow: auto;
         padding: 16px;
-        display: grid;
-        align-content: start;
+        display: flex;
+        flex-direction: column;
         gap: 12px;
       }
 
+      .msg-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        width: 100%;
+      }
+
+      .msg-row.assistant {
+        justify-content: flex-start;
+      }
+
+      .msg-row.user {
+        justify-content: flex-end;
+      }
+
+      .msg-avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        font-weight: 700;
+        color: #344054;
+        background: #fff;
+        flex: 0 0 auto;
+      }
+
+      .msg-avatar.assistant {
+        background: #eef4ff;
+      }
+
+      .msg-avatar.user {
+        background: #dbe9ff;
+      }
+
       .msg {
-        max-width: min(760px, 88%);
+        max-width: min(760px, 82%);
         border: 1px solid var(--line);
         border-radius: 18px;
         padding: 12px 14px;
@@ -192,18 +367,16 @@
       }
 
       .assistant {
-        justify-self: start;
         background: var(--assistant-bubble);
       }
 
       .user {
-        justify-self: end;
         background: var(--user-bubble);
         border-color: #bfd3ff;
       }
 
       .msg-empty {
-        justify-self: center;
+        align-self: center;
         text-align: center;
         color: var(--muted);
         background: var(--surface-soft);
@@ -402,7 +575,23 @@
     </style>
   </head>
   <body>
-    <main class="app">
+    <section class="auth-gate" id="authGate">
+      <div class="auth-card">
+        <div class="brand">
+          <span class="logo-dot" aria-hidden="true"></span>
+          <h2>MyAI 访问验证</h2>
+        </div>
+        <div class="hint">请输入访问 token，验证通过后才能进入聊天页面。</div>
+        <div class="row">
+          <label for="authToken">访问口令</label>
+          <input id="authToken" type="password" placeholder="输入访问 token" />
+        </div>
+        <button class="send-btn" id="authSubmit" type="button">进入页面</button>
+        <div class="auth-error" id="authError"></div>
+      </div>
+    </section>
+
+    <main class="app app-hidden" id="appShell">
       <header class="topbar">
         <div class="brand">
           <span class="logo-dot" aria-hidden="true"></span>
@@ -410,6 +599,7 @@
         </div>
         <div class="top-actions">
           <button class="chip-btn" id="settingsToggle" type="button">设置</button>
+          <button class="chip-btn" id="newChatBtn" type="button">新建</button>
           <button class="chip-btn" id="clearBtn" type="button">清空</button>
         </div>
       </header>
@@ -435,10 +625,32 @@
         </div>
         <div class="row">
           <label for="model">模型</label>
-          <input id="model" list="modelOptions" placeholder="例如：qwen-plus / claude-3-7-sonnet" />
-          <datalist id="modelOptions"></datalist>
-          <div class="hint" id="modelHint">可手动输入模型名；模型列表会按提供商加载。</div>
+          <input id="model" placeholder="例如：qwen-plus / claude-3-7-sonnet" />
+          <div class="hint" id="modelHint">可手动输入模型名，也可直接点下方表格选择。</div>
+          <div class="model-table-wrap">
+            <table class="model-table">
+              <thead>
+                <tr>
+                  <th>模型</th>
+                  <th>能力</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody id="modelTableBody">
+                <tr>
+                  <td colspan="3">模型列表加载后可点击选择。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <div class="hint" id="autoModelNotice"></div>
+        </div>
+        <div class="row">
+          <div class="section-head">
+            <label>历史会话（Cookie）</label>
+          </div>
+          <div class="history-list" id="historyList"></div>
+          <div class="hint">支持新建与查看历史，超出容量时会自动裁剪旧内容。</div>
         </div>
       </section>
 
@@ -477,22 +689,36 @@
       const MAX_FILE_COUNT = 5;
       const MAX_FILE_SIZE = 20 * 1024 * 1024;
       const MAX_TOTAL_SIZE = 80 * 1024 * 1024;
+      const COOKIE_CHAT_HISTORY = "myai_chat_history";
+      const COOKIE_ACTIVE_CHAT = "myai_active_chat";
+      const COOKIE_MAX_BYTES = 3400;
+      const MAX_CONVERSATION_COUNT = 8;
+      const MAX_MESSAGES_PER_CONVERSATION = 24;
 
       const state = {
         messages: [],
         loading: false,
         pendingFiles: [],
         availableModels: [],
+        conversations: [],
+        activeConversationId: "",
       };
 
       const els = {
+        appShell: document.getElementById("appShell"),
+        authGate: document.getElementById("authGate"),
+        authToken: document.getElementById("authToken"),
+        authSubmit: document.getElementById("authSubmit"),
+        authError: document.getElementById("authError"),
         settingsPanel: document.getElementById("settingsPanel"),
         settingsToggle: document.getElementById("settingsToggle"),
+        newChatBtn: document.getElementById("newChatBtn"),
+        historyList: document.getElementById("historyList"),
         apiBase: document.getElementById("apiBase"),
         token: document.getElementById("token"),
         provider: document.getElementById("provider"),
         model: document.getElementById("model"),
-        modelOptions: document.getElementById("modelOptions"),
+        modelTableBody: document.getElementById("modelTableBody"),
         modelHint: document.getElementById("modelHint"),
         autoModelNotice: document.getElementById("autoModelNotice"),
         chat: document.getElementById("chat"),
@@ -510,14 +736,24 @@
 
       async function init() {
         els.apiBase.value = localStorage.getItem("myai_api_base") || "";
-        els.token.value = localStorage.getItem("myai_access_token") || "";
+        els.token.value = "";
         els.provider.value = normalizeProvider(localStorage.getItem("myai_provider") || "openai_compatible");
         els.model.value = localStorage.getItem("myai_model") || "";
+
+        const legacyToken = localStorage.getItem("myai_access_token") || "";
+        if (legacyToken) {
+          els.authToken.value = legacyToken;
+          localStorage.removeItem("myai_access_token");
+        }
+
+        attachEvents();
+        lockApp();
         restoreMessages();
         renderMessages();
+        renderHistoryList();
+        renderModelTable();
         renderPendingFiles();
-        attachEvents();
-        await loadModels();
+
         if ("serviceWorker" in navigator) {
           try {
             await navigator.serviceWorker.register("/sw.js");
@@ -526,25 +762,40 @@
       }
 
       function attachEvents() {
+        els.authSubmit.addEventListener("click", onAuthSubmit);
+        els.authToken.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onAuthSubmit();
+          }
+        });
+
         els.settingsToggle.addEventListener("click", () => {
           const collapsed = els.settingsPanel.classList.toggle("collapsed");
           els.settingsToggle.textContent = collapsed ? "设置" : "收起";
         });
 
         els.sendBtn.addEventListener("click", onSend);
+        els.newChatBtn.addEventListener("click", onNewChat);
         els.clearBtn.addEventListener("click", onClear);
         els.pickFilesBtn.addEventListener("click", () => els.fileInput.click());
         els.fileInput.addEventListener("change", onPickFiles);
         els.attachList.addEventListener("click", onRemovePendingFile);
+        els.historyList.addEventListener("click", onSwitchConversation);
+        els.modelTableBody.addEventListener("click", onPickModelFromTable);
 
         els.apiBase.addEventListener("change", () => {
           localStorage.setItem("myai_api_base", els.apiBase.value.trim());
-          loadModels();
+          if (isUnlocked()) loadModels();
         });
 
         els.token.addEventListener("change", () => {
-          localStorage.setItem("myai_access_token", els.token.value.trim());
-          loadModels();
+          els.authToken.value = els.token.value.trim();
+          if (!els.token.value.trim()) {
+            lockApp("token 为空，请重新输入。");
+            return;
+          }
+          if (isUnlocked()) loadModels();
         });
 
         els.provider.addEventListener("change", () => {
@@ -552,12 +803,13 @@
           els.provider.value = provider;
           localStorage.setItem("myai_provider", provider);
           setAutoModelNotice("");
-          loadModels();
+          if (isUnlocked()) loadModels();
         });
 
         els.model.addEventListener("change", () => {
           localStorage.setItem("myai_model", els.model.value.trim());
           setAutoModelNotice("");
+          renderModelTable();
         });
 
         els.input.addEventListener("keydown", (e) => {
@@ -568,8 +820,54 @@
         });
       }
 
+      async function onAuthSubmit() {
+        if (state.loading) return;
+        const token = (els.authToken.value || "").trim();
+        if (!token) {
+          lockApp("请输入访问 token。");
+          return;
+        }
+
+        els.authSubmit.disabled = true;
+        els.authSubmit.classList.add("loading");
+        els.authError.textContent = "正在验证 token...";
+
+        try {
+          await verifyAccessToken(token);
+          els.token.value = token;
+          unlockApp();
+          await loadModels();
+          setStatus("口令验证成功。");
+          els.input.focus();
+        } catch (e) {
+          lockApp(`验证失败：${e.message}`);
+        } finally {
+          els.authSubmit.disabled = false;
+          els.authSubmit.classList.remove("loading");
+          if (isUnlocked()) {
+            els.authError.textContent = "";
+          }
+        }
+      }
+
       function apiBase() {
         return (els.apiBase.value || "").trim() || location.origin;
+      }
+
+      function isUnlocked() {
+        return els.authGate.hidden;
+      }
+
+      function lockApp(message = "") {
+        els.appShell.classList.add("app-hidden");
+        els.authGate.hidden = false;
+        els.authError.textContent = message || "";
+      }
+
+      function unlockApp() {
+        els.appShell.classList.remove("app-hidden");
+        els.authGate.hidden = true;
+        els.authError.textContent = "";
       }
 
       function selectedProvider() {
@@ -596,9 +894,29 @@
           return `当前为服务端白名单模式（${providerLabel(provider)}），仅可用列表内模型。`;
         }
         if (hasModels) {
-          return `已拉取 ${providerLabel(provider)} 的模型列表，也可手动输入模型名。`;
+          return `已拉取 ${providerLabel(provider)} 的模型列表，可直接在表格中点击选择。`;
         }
         return `${providerLabel(provider)} 模型列表为空，可手动输入模型名。`;
+      }
+
+      async function verifyAccessToken(token) {
+        const provider = selectedProvider();
+        const query = new URLSearchParams({ provider }).toString();
+        let resp;
+        let data = {};
+        try {
+          resp = await fetch(`${apiBase()}/api/models?${query}`, {
+            headers: token ? { "X-Client-Token": token } : {},
+          });
+        } catch {
+          throw new Error("无法连接服务端");
+        }
+        try {
+          data = await resp.json();
+        } catch {}
+        if (!resp.ok) {
+          throw new Error(data.error || "token 不可用");
+        }
       }
 
       async function loadModels() {
@@ -612,14 +930,8 @@
           const data = await resp.json();
           if (!resp.ok) throw new Error(data.error || "加载失败");
 
-          els.modelOptions.innerHTML = "";
           const models = Array.isArray(data.models) ? data.models : [];
           state.availableModels = models.slice();
-          for (const m of models) {
-            const opt = document.createElement("option");
-            opt.value = m;
-            els.modelOptions.appendChild(opt);
-          }
 
           if (!els.model.value && models.length) {
             els.model.value = models[0];
@@ -627,6 +939,7 @@
           }
 
           els.modelHint.textContent = modelHintText(provider, data.source, models.length > 0);
+          renderModelTable();
 
           if (els.model.value) {
             setStatus("模型已就绪。");
@@ -636,8 +949,71 @@
         } catch (e) {
           state.availableModels = [];
           els.modelHint.textContent = `${providerLabel(provider)} 模型列表加载失败时，也可以手动输入模型名。`;
+          renderModelTable();
           setStatus(`模型加载失败：${e.message}`, true);
         }
+      }
+
+      function renderModelTable() {
+        const selectedModel = (els.model.value || "").trim();
+        els.modelTableBody.innerHTML = "";
+
+        if (!state.availableModels.length) {
+          const tr = document.createElement("tr");
+          const td = document.createElement("td");
+          td.colSpan = 3;
+          td.textContent = "暂无模型列表，可手动输入模型名。";
+          tr.appendChild(td);
+          els.modelTableBody.appendChild(tr);
+          return;
+        }
+
+        for (const model of state.availableModels) {
+          const tr = document.createElement("tr");
+          tr.className = "model-row";
+          tr.dataset.model = model;
+          if (model === selectedModel) tr.classList.add("active");
+
+          const nameTd = document.createElement("td");
+          nameTd.textContent = model;
+
+          const capsTd = document.createElement("td");
+          const capsWrap = document.createElement("div");
+          capsWrap.className = "cap-list";
+          const caps = detectModelCapabilities(model);
+          const capNames = [];
+          if (caps.image) capNames.push("图像");
+          if (caps.audio) capNames.push("音频");
+          if (caps.video) capNames.push("视频");
+          if (caps.file) capNames.push("文件");
+          if (!capNames.length) capNames.push("文本");
+          for (const cap of capNames) {
+            const chip = document.createElement("span");
+            chip.className = "cap-chip";
+            chip.textContent = cap;
+            capsWrap.appendChild(chip);
+          }
+          capsTd.appendChild(capsWrap);
+
+          const stateTd = document.createElement("td");
+          stateTd.textContent = model === selectedModel ? "当前" : "点击选择";
+
+          tr.appendChild(nameTd);
+          tr.appendChild(capsTd);
+          tr.appendChild(stateTd);
+          els.modelTableBody.appendChild(tr);
+        }
+      }
+
+      function onPickModelFromTable(e) {
+        const row = e.target.closest("tr[data-model]");
+        if (!row) return;
+        const model = (row.dataset.model || "").trim();
+        if (!model) return;
+        els.model.value = model;
+        localStorage.setItem("myai_model", model);
+        setAutoModelNotice("");
+        renderModelTable();
       }
 
       async function onPickFiles() {
@@ -704,10 +1080,18 @@
 
       async function onSend() {
         if (state.loading) return;
+        if (!isUnlocked()) {
+          setStatus("请先输入 token 后再发送。", true);
+          return;
+        }
 
         const text = els.input.value.trim();
         const selectedModel = els.model.value.trim();
         const provider = selectedProvider();
+        if (!(els.token.value || "").trim()) {
+          setStatus("缺少访问 token。", true);
+          return;
+        }
         if (!text && !state.pendingFiles.length) return;
         if (!selectedModel) {
           setStatus("请先输入模型名。", true);
@@ -722,6 +1106,7 @@
           const notice = `检测到${modelDecision.reasonLabel}，已自动切换模型：${selectedModel} -> ${modelToUse}`;
           setAutoModelNotice(notice);
           setStatus(notice);
+          renderModelTable();
         } else {
           setAutoModelNotice("");
         }
@@ -783,6 +1168,66 @@
         renderMessages();
         renderPendingFiles();
         setStatus("已清空会话。");
+      }
+
+      function onNewChat() {
+        const current = getActiveConversation();
+        if (current) {
+          current.messages = state.messages.slice(-MAX_MESSAGES_PER_CONVERSATION).map(compactMessage).filter(Boolean);
+          current.updatedAt = Date.now();
+          const title = buildConversationTitle(state.messages);
+          if (title) current.title = title;
+        }
+
+        const conv = {
+          id: createConversationId(),
+          title: "新会话",
+          updatedAt: Date.now(),
+          messages: [],
+        };
+        state.conversations.unshift(conv);
+        state.activeConversationId = conv.id;
+        state.messages = [];
+        state.pendingFiles = [];
+        els.input.value = "";
+        els.fileInput.value = "";
+        setAutoModelNotice("");
+        saveMessages();
+        renderMessages();
+        renderPendingFiles();
+        renderHistoryList();
+        setStatus("已新建会话。");
+      }
+
+      function onSwitchConversation(e) {
+        const btn = e.target.closest("button[data-conversation-id]");
+        if (!btn) return;
+        const id = btn.dataset.conversationId;
+        if (!id || id === state.activeConversationId) return;
+
+        const current = getActiveConversation();
+        if (current) {
+          current.messages = state.messages.slice(-MAX_MESSAGES_PER_CONVERSATION).map(compactMessage).filter(Boolean);
+          current.updatedAt = Date.now();
+          const title = buildConversationTitle(state.messages);
+          if (title) current.title = title;
+        }
+
+        const next = state.conversations.find((c) => c.id === id);
+        if (!next) return;
+        state.activeConversationId = next.id;
+        state.messages = (next.messages || [])
+          .map((m) => ({
+            role: m.role === "assistant" ? "assistant" : "user",
+            content: normalizeMessageContent(m.content),
+          }))
+          .filter(Boolean);
+        state.pendingFiles = [];
+        els.fileInput.value = "";
+        saveMessages();
+        renderMessages();
+        renderPendingFiles();
+        renderHistoryList();
       }
 
       function tokenHeaders() {
@@ -997,10 +1442,27 @@
         }
 
         for (const msg of state.messages) {
-          const div = document.createElement("div");
-          div.className = `msg ${msg.role === "user" ? "user" : "assistant"}`;
-          renderMessageContent(div, msg.content);
-          els.chat.appendChild(div);
+          const roleClass = msg.role === "user" ? "user" : "assistant";
+          const row = document.createElement("div");
+          row.className = `msg-row ${roleClass}`;
+
+          const avatar = document.createElement("div");
+          avatar.className = `msg-avatar ${roleClass}`;
+          avatar.textContent = roleClass === "user" ? "我" : "AI";
+
+          const bubble = document.createElement("div");
+          bubble.className = `msg ${roleClass}`;
+          renderMessageContent(bubble, msg.content);
+
+          if (roleClass === "user") {
+            row.appendChild(bubble);
+            row.appendChild(avatar);
+          } else {
+            row.appendChild(avatar);
+            row.appendChild(bubble);
+          }
+
+          els.chat.appendChild(row);
         }
 
         els.chat.scrollTop = els.chat.scrollHeight;
