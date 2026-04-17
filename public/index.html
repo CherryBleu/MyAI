@@ -3,269 +3,291 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#1f4bd8" />
+    <meta name="theme-color" content="#f7f9fc" />
     <title>MyAI Mobile</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <style>
       :root {
-        --bg: #f4f7ff;
-        --bg-soft: #eff4ff;
-        --card: rgba(255, 255, 255, 0.8);
-        --text: #152448;
-        --muted: #4f5e85;
-        --primary: #1f4bd8;
-        --primary-2: #17a2c9;
-        --border: rgba(121, 146, 223, 0.25);
-        --error: #b42318;
-        --assistant-bg: #ffffff;
-        --user-bg: #e8f2ff;
-        --shadow: 0 18px 40px rgba(41, 72, 169, 0.14);
+        --bg: #f7f9fc;
+        --surface: #ffffff;
+        --surface-soft: #f3f6fb;
+        --text: #1f2937;
+        --muted: #667085;
+        --line: #e4e7ec;
+        --primary: #5a6af2;
+        --primary-2: #63a5ff;
+        --user-bubble: #dbe9ff;
+        --assistant-bubble: #ffffff;
+        --danger: #b42318;
+        --shadow: 0 12px 28px rgba(16, 24, 40, 0.08);
       }
-      * { box-sizing: border-box; }
+
+      * {
+        box-sizing: border-box;
+      }
+
       body {
         margin: 0;
-        font-family: "MiSans", "HarmonyOS Sans SC", "PingFang SC", "Noto Sans CJK SC", "Segoe UI", sans-serif;
-        background: linear-gradient(165deg, var(--bg) 0%, var(--bg-soft) 45%, #f9fcff 100%);
         color: var(--text);
-        position: relative;
-        overflow-x: hidden;
+        background:
+          radial-gradient(1200px 500px at 12% -15%, #e7eeff 0%, rgba(231, 238, 255, 0) 55%),
+          radial-gradient(900px 520px at 110% 0%, #e5f2ff 0%, rgba(229, 242, 255, 0) 60%),
+          var(--bg);
+        font-family: "Google Sans", "Inter", "PingFang SC", "Segoe UI", sans-serif;
       }
-      body::before,
-      body::after {
-        content: "";
-        position: fixed;
-        width: 260px;
-        height: 260px;
-        border-radius: 50%;
-        filter: blur(18px);
-        z-index: -1;
-        opacity: 0.65;
-        animation: floatOrb 8s ease-in-out infinite;
-      }
-      body::before {
-        background: radial-gradient(circle, #c8d7ff 0%, rgba(200, 215, 255, 0) 70%);
-        top: -80px;
-        right: -70px;
-      }
-      body::after {
-        background: radial-gradient(circle, #bbf0ff 0%, rgba(187, 240, 255, 0) 70%);
-        bottom: -110px;
-        left: -80px;
-        animation-delay: -3s;
-      }
+
       .app {
         min-height: 100dvh;
-        max-width: 720px;
+        max-width: 980px;
         margin: 0 auto;
+        padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
         display: grid;
         grid-template-rows: auto auto 1fr auto;
         gap: 12px;
-        padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
       }
-      .card {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 18px;
-        padding: 12px;
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(8px);
-      }
-      .reveal {
-        opacity: 0;
-        transform: translateY(16px) scale(0.995);
-        animation: riseIn 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-      }
-      .app > .reveal:nth-child(1) { animation-delay: 0.02s; }
-      .app > .reveal:nth-child(2) { animation-delay: 0.08s; }
-      .app > .reveal:nth-child(3) { animation-delay: 0.14s; }
-      .app > .reveal:nth-child(4) { animation-delay: 0.2s; }
-      .header {
+
+      .topbar {
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        gap: 10px;
+        justify-content: space-between;
+        gap: 12px;
       }
+
       .brand {
         display: flex;
         align-items: center;
         gap: 10px;
       }
-      .header h1 {
+
+      .logo-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #4f8ef7, #6758ff);
+        box-shadow: 0 0 0 6px rgba(90, 106, 242, 0.12);
+      }
+
+      .brand h1 {
         margin: 0;
-        font-size: clamp(18px, 4.4vw, 24px);
-        letter-spacing: 0.15px;
-        font-weight: 700;
-      }
-      .pill {
-        padding: 4px 10px;
-        border-radius: 999px;
-        font-size: 12px;
+        font-size: clamp(18px, 2.8vw, 22px);
         font-weight: 600;
-        color: #1244cb;
-        background: linear-gradient(135deg, #e6edff, #dff6ff);
-        border: 1px solid rgba(31, 75, 216, 0.22);
       }
-      .ghost-btn {
-        border: 1px solid rgba(81, 110, 199, 0.32);
-        background: rgba(255, 255, 255, 0.65);
-        color: #3656a8;
-        font-size: 13px;
+
+      .top-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .chip-btn {
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.92);
+        color: #344054;
         border-radius: 999px;
         padding: 8px 12px;
-        transition: all 0.2s ease;
+        font-size: 13px;
+        transition: background 0.2s ease, border-color 0.2s ease;
       }
-      .ghost-btn:active {
-        transform: translateY(1px);
-        opacity: 0.88;
+
+      .chip-btn:active {
+        background: #eef2f8;
       }
-      .config {
+
+      .settings {
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 12px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(8px);
+        display: grid;
+        gap: 10px;
+        transform-origin: top;
+        transition: max-height 0.25s ease, opacity 0.25s ease, padding 0.25s ease;
+        max-height: 360px;
+        opacity: 1;
+      }
+
+      .settings.collapsed {
+        max-height: 0;
+        opacity: 0;
+        overflow: hidden;
+        padding-top: 0;
+        padding-bottom: 0;
+        border-color: transparent;
+      }
+
+      .grid {
         display: grid;
         gap: 10px;
       }
+
       .row {
         display: grid;
         gap: 6px;
       }
+
       label {
         font-size: 11px;
+        color: var(--muted);
         letter-spacing: 0.3px;
         text-transform: uppercase;
         font-weight: 600;
-        color: var(--muted);
       }
-      input, select, textarea {
+
+      input,
+      textarea {
         width: 100%;
-        padding: 11px 12px;
-        border: 1px solid var(--border);
+        border: 1px solid var(--line);
         border-radius: 12px;
-        background: rgba(255, 255, 255, 0.92);
-        font-size: 14px;
+        background: #fff;
         color: var(--text);
+        font-size: 14px;
+        padding: 10px 12px;
+        outline: none;
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
       }
-      input:focus, textarea:focus {
-        outline: none;
-        border-color: rgba(31, 75, 216, 0.5);
-        box-shadow: 0 0 0 3px rgba(31, 75, 216, 0.12);
+
+      input:focus,
+      textarea:focus {
+        border-color: #b8c2ff;
+        box-shadow: 0 0 0 4px rgba(90, 106, 242, 0.12);
       }
-      textarea {
-        min-height: 88px;
-        resize: vertical;
-      }
-      .chat {
-        overflow: auto;
-        display: grid;
-        gap: 10px;
-        align-content: start;
-        min-height: 34vh;
-      }
-      .msg {
-        padding: 12px;
-        border-radius: 14px;
-        border: 1px solid var(--border);
-        white-space: pre-wrap;
-        word-break: break-word;
-        line-height: 1.55;
-        font-size: 14px;
-        position: relative;
-        animation: popIn 0.24s ease;
-      }
-      .msg::before {
-        content: attr(data-role);
-        display: inline-block;
-        margin-bottom: 6px;
-        font-size: 11px;
-        color: var(--muted);
-        letter-spacing: 0.25px;
-      }
-      .user {
-        background: var(--user-bg);
-        border-color: rgba(31, 75, 216, 0.22);
-      }
-      .assistant {
-        background: var(--assistant-bg);
-      }
-      .msg-empty {
-        text-align: center;
-        color: var(--muted);
-        background: rgba(255, 255, 255, 0.65);
-      }
-      .composer {
-        display: grid;
-        gap: 10px;
-      }
-      .actions {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 8px;
-        align-items: center;
-      }
-      .btn {
-        border: 0;
-        border-radius: 12px;
-        padding: 10px 14px;
-        font-size: 14px;
-        font-weight: 600;
-        color: white;
-        background: linear-gradient(135deg, var(--primary), var(--primary-2));
-        box-shadow: 0 8px 20px rgba(31, 75, 216, 0.35);
-        transition: transform 0.15s ease, filter 0.2s ease;
-      }
-      .btn:active {
-        transform: translateY(1px);
-      }
-      .btn[disabled] {
-        filter: grayscale(0.15);
-        opacity: 0.8;
-      }
-      .btn.loading {
-        position: relative;
-        min-width: 78px;
-      }
-      .btn.loading::after {
-        content: " ...";
-        letter-spacing: 1px;
-        animation: blink 1s steps(2, start) infinite;
-      }
-      .status {
-        min-height: 18px;
-        font-size: 12px;
-        color: var(--muted);
-        padding-left: 2px;
-      }
+
       .hint {
         font-size: 12px;
         color: var(--muted);
       }
-      .status.error { color: var(--error); }
 
-      @keyframes riseIn {
-        to {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
+      .chat-wrap {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.92));
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(8px);
+        display: grid;
+        grid-template-rows: 1fr;
+        min-height: 38vh;
       }
-      @keyframes popIn {
+
+      .chat {
+        overflow: auto;
+        padding: 16px;
+        display: grid;
+        align-content: start;
+        gap: 12px;
+      }
+
+      .msg {
+        max-width: min(760px, 88%);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 12px 14px;
+        line-height: 1.55;
+        font-size: 14px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        animation: fadeUp 0.2s ease;
+      }
+
+      .assistant {
+        justify-self: start;
+        background: var(--assistant-bubble);
+      }
+
+      .user {
+        justify-self: end;
+        background: var(--user-bubble);
+        border-color: #bfd3ff;
+      }
+
+      .msg-empty {
+        justify-self: center;
+        text-align: center;
+        color: var(--muted);
+        background: var(--surface-soft);
+      }
+
+      .composer {
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(8px);
+        padding: 12px;
+        display: grid;
+        gap: 10px;
+      }
+
+      textarea {
+        min-height: 92px;
+        resize: vertical;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .status {
+        min-height: 18px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .send-btn {
+        border: 0;
+        border-radius: 12px;
+        padding: 10px 14px;
+        color: white;
+        font-size: 14px;
+        font-weight: 600;
+        background: linear-gradient(135deg, var(--primary), var(--primary-2));
+        min-width: 88px;
+        transition: transform 0.15s ease, opacity 0.15s ease;
+      }
+
+      .send-btn:active {
+        transform: translateY(1px);
+      }
+
+      .send-btn[disabled] {
+        opacity: 0.75;
+      }
+
+      .send-btn.loading::after {
+        content: " ...";
+        animation: blink 1s steps(2, start) infinite;
+      }
+
+      @keyframes fadeUp {
         from {
           opacity: 0;
-          transform: translateY(7px);
+          transform: translateY(6px);
         }
         to {
           opacity: 1;
           transform: translateY(0);
         }
       }
-      @keyframes floatOrb {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(12px); }
-      }
+
       @keyframes blink {
-        50% { opacity: 0.45; }
+        50% {
+          opacity: 0.45;
+        }
       }
-      @media (max-width: 420px) {
-        .header h1 { font-size: 18px; }
-        .pill { padding: 3px 9px; }
+
+      @media (min-width: 860px) {
+        .grid {
+          grid-template-columns: 1fr 1fr;
+        }
       }
+
       @media (prefers-reduced-motion: reduce) {
         * {
           animation: none !important;
@@ -276,22 +298,27 @@
   </head>
   <body>
     <main class="app">
-      <section class="card header reveal">
+      <header class="topbar">
         <div class="brand">
-          <span class="pill">MyAI</span>
-          <h1>Mobile Chat Studio</h1>
+          <span class="logo-dot" aria-hidden="true"></span>
+          <h1>MyAI</h1>
         </div>
-        <button class="ghost-btn" id="clearBtn" type="button">清空会话</button>
-      </section>
+        <div class="top-actions">
+          <button class="chip-btn" id="settingsToggle" type="button">设置</button>
+          <button class="chip-btn" id="clearBtn" type="button">清空</button>
+        </div>
+      </header>
 
-      <section class="card config reveal">
-        <div class="row">
-          <label for="apiBase">接口地址（默认当前域名）</label>
-          <input id="apiBase" placeholder="https://your-domain.example" />
-        </div>
-        <div class="row">
-          <label for="token">访问口令（不是上游 API Key）</label>
-          <input id="token" type="password" placeholder="向你领取的口令" />
+      <section class="settings collapsed" id="settingsPanel">
+        <div class="grid">
+          <div class="row">
+            <label for="apiBase">接口地址（默认当前域名）</label>
+            <input id="apiBase" placeholder="https://your-domain.example" />
+          </div>
+          <div class="row">
+            <label for="token">访问口令（不是上游 API Key）</label>
+            <input id="token" type="password" placeholder="向你领取的口令" />
+          </div>
         </div>
         <div class="row">
           <label for="model">模型</label>
@@ -301,16 +328,18 @@
         </div>
       </section>
 
-      <section class="card chat reveal" id="chat"></section>
+      <section class="chat-wrap">
+        <section class="chat" id="chat"></section>
+      </section>
 
-      <section class="card composer reveal">
+      <section class="composer">
         <div class="row">
           <label for="input">输入</label>
           <textarea id="input" placeholder="输入你想问的问题"></textarea>
         </div>
         <div class="actions">
           <div class="status" id="status"></div>
-          <button class="btn" id="sendBtn" type="button">发送</button>
+          <button class="send-btn" id="sendBtn" type="button">发送</button>
         </div>
       </section>
     </main>
@@ -322,6 +351,8 @@
       };
 
       const els = {
+        settingsPanel: document.getElementById("settingsPanel"),
+        settingsToggle: document.getElementById("settingsToggle"),
         apiBase: document.getElementById("apiBase"),
         token: document.getElementById("token"),
         model: document.getElementById("model"),
@@ -345,24 +376,35 @@
         attachEvents();
         await loadModels();
         if ("serviceWorker" in navigator) {
-          try { await navigator.serviceWorker.register("/sw.js"); } catch {}
+          try {
+            await navigator.serviceWorker.register("/sw.js");
+          } catch {}
         }
       }
 
       function attachEvents() {
+        els.settingsToggle.addEventListener("click", () => {
+          const collapsed = els.settingsPanel.classList.toggle("collapsed");
+          els.settingsToggle.textContent = collapsed ? "设置" : "收起";
+        });
+
         els.sendBtn.addEventListener("click", onSend);
         els.clearBtn.addEventListener("click", onClear);
+
         els.apiBase.addEventListener("change", () => {
           localStorage.setItem("myai_api_base", els.apiBase.value.trim());
           loadModels();
         });
+
         els.token.addEventListener("change", () => {
           localStorage.setItem("myai_access_token", els.token.value.trim());
           loadModels();
         });
+
         els.model.addEventListener("change", () => {
           localStorage.setItem("myai_model", els.model.value.trim());
         });
+
         els.input.addEventListener("keydown", (e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
@@ -383,6 +425,7 @@
           });
           const data = await resp.json();
           if (!resp.ok) throw new Error(data.error || "加载失败");
+
           els.modelOptions.innerHTML = "";
           const models = Array.isArray(data.models) ? data.models : [];
           for (const m of models) {
@@ -390,6 +433,7 @@
             opt.value = m;
             els.modelOptions.appendChild(opt);
           }
+
           if (!els.model.value && models.length) {
             els.model.value = models[0];
             localStorage.setItem("myai_model", els.model.value);
@@ -424,8 +468,8 @@
           setStatus("请先输入模型名。", true);
           return;
         }
-        localStorage.setItem("myai_model", selectedModel);
 
+        localStorage.setItem("myai_model", selectedModel);
         state.messages.push({ role: "user", content });
         els.input.value = "";
         saveMessages();
@@ -484,21 +528,22 @@
 
       function renderMessages() {
         els.chat.innerHTML = "";
+
         if (!state.messages.length) {
           const empty = document.createElement("div");
           empty.className = "msg assistant msg-empty";
-          empty.dataset.role = "系统";
-          empty.textContent = "开始提问吧。";
+          empty.textContent = "你好，我可以帮你解答问题。";
           els.chat.appendChild(empty);
           return;
         }
+
         for (const msg of state.messages) {
           const div = document.createElement("div");
           div.className = `msg ${msg.role === "user" ? "user" : "assistant"}`;
-          div.dataset.role = msg.role === "user" ? "你" : "AI";
           div.textContent = msg.content;
           els.chat.appendChild(div);
         }
+
         els.chat.scrollTop = els.chat.scrollHeight;
       }
 

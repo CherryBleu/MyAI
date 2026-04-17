@@ -3,7 +3,7 @@
   "short_name": "MyAI",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f4f7ff",
-  "theme_color": "#1f4bd8",
+  "background_color": "#f7f9fc",
+  "theme_color": "#f7f9fc",
   "icons": []
 }
