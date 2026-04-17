@@ -1,9 +1,0 @@
-﻿# Local dev only
-UPSTREAM_API_KEY=replace-with-your-real-key
-UPSTREAM_BASE_URL=https://example.com
-UPSTREAM_CHAT_PATH=/v1/chat/completions
-UPSTREAM_MODELS_PATH=/v1/models
-ALLOWED_MODELS=
-ACCESS_TOKENS=change-this-token
-ALLOWED_ORIGINS=
-RATE_LIMIT_PER_MIN=0

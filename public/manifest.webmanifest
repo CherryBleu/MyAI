@@ -1,9 +1,0 @@
-﻿{
-  "name": "MyAI Mobile",
-  "short_name": "MyAI",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#f7f9fc",
-  "theme_color": "#f7f9fc",
-  "icons": []
-}
