@@ -147,7 +147,7 @@ async function fetchOpenAICompatibleModels(env) {
   try {
     resp = await fetch(url, {
       method: "GET",
-      headers: { Authorization: `Bearer ${cfg.apiKey}` },
+      headers: buildOpenAICompatibleAuthHeaders(cfg),
     });
   } catch {
     return { ok: false, error: "failed to fetch upstream models" };
@@ -314,7 +314,7 @@ async function forwardOpenAICompatibleChat({ body, model, messages, temperature,
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${cfg.apiKey}`,
+        ...buildOpenAICompatibleAuthHeaders(cfg),
       },
       body: JSON.stringify(payload),
     });
@@ -676,10 +676,12 @@ function getOpenAICompatibleConfig(env) {
   const baseUrl = (env.UPSTREAM_BASE_URL || "").trim();
   const chatPath = (env.UPSTREAM_CHAT_PATH || "/v1/chat/completions").trim();
   const modelsPath = (env.UPSTREAM_MODELS_PATH || "/v1/models").trim();
+  const apiKeyHeader = (env.UPSTREAM_API_KEY_HEADER || "Authorization").trim() || "Authorization";
+  const apiKeyPrefix = env.UPSTREAM_API_KEY_PREFIX;
   if (!apiKey || !baseUrl) {
     return { ok: false, error: "Server not configured: missing UPSTREAM_API_KEY or UPSTREAM_BASE_URL." };
   }
-  return { ok: true, apiKey, baseUrl, chatPath, modelsPath };
+  return { ok: true, apiKey, baseUrl, chatPath, modelsPath, apiKeyHeader, apiKeyPrefix };
 }
 
 function getAnthropicConfig(env) {
@@ -707,6 +709,15 @@ function getGeminiConfig(env) {
 
 function buildUrl(baseUrl, pathPart) {
   return `${baseUrl.replace(/\/$/, "")}${String(pathPart || "").startsWith("/") ? pathPart : `/${pathPart}`}`;
+}
+
+function buildOpenAICompatibleAuthHeaders(cfg) {
+  const headerName = String(cfg?.apiKeyHeader || "Authorization").trim() || "Authorization";
+  if (headerName.toLowerCase() === "authorization") {
+    const prefix = cfg?.apiKeyPrefix == null ? "Bearer " : String(cfg.apiKeyPrefix);
+    return { [headerName]: `${prefix}${cfg.apiKey}`.trim() };
+  }
+  return { [headerName]: cfg.apiKey };
 }
 
 function resolveGeminiGeneratePath(template, model) {

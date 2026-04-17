@@ -36,6 +36,8 @@ OpenAI 兼容 provider 变量：
 - `UPSTREAM_BASE_URL`（不带末尾 `/`）
 - `UPSTREAM_CHAT_PATH`（默认 `/v1/chat/completions`）
 - `UPSTREAM_MODELS_PATH`（默认 `/v1/models`）
+- `UPSTREAM_API_KEY_HEADER`（可选，默认 `Authorization`）
+- `UPSTREAM_API_KEY_PREFIX`（可选，仅在 `Authorization` 头下生效，默认 `Bearer `）
 
 Anthropic 原生 provider 变量：
 - `ANTHROPIC_API_KEY`
@@ -134,6 +136,7 @@ npm.cmd run start
 可选环境变量：
 - `UPSTREAM_CHAT_PATH`（OpenAI 兼容默认 `/v1/chat/completions`）
 - `UPSTREAM_MODELS_PATH`（OpenAI 兼容默认 `/v1/models`）
+- `UPSTREAM_API_KEY_HEADER`、`UPSTREAM_API_KEY_PREFIX`（第三方 OpenAI 兼容服务可按需调整鉴权头）
 - `ANTHROPIC_MESSAGES_PATH`、`ANTHROPIC_MODELS_PATH`、`ANTHROPIC_VERSION`
 - `GEMINI_GENERATE_PATH_TEMPLATE`、`GEMINI_MODELS_PATH`
 - `ALLOWED_MODELS`（留空=不限模型）

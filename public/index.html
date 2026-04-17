@@ -1208,7 +1208,6 @@
         const current = getActiveConversation();
         if (current) {
           current.messages = state.messages.slice(-MAX_MESSAGES_PER_CONVERSATION).map(compactMessage).filter(Boolean);
-          current.updatedAt = Date.now();
           const title = buildConversationTitle(state.messages);
           if (title) current.title = title;
         }
@@ -1224,7 +1223,7 @@
           .filter(Boolean);
         state.pendingFiles = [];
         els.fileInput.value = "";
-        saveMessages();
+        persistConversationsToCookie();
         renderMessages();
         renderPendingFiles();
         renderHistoryList();
@@ -1688,8 +1687,16 @@
       }
 
       function saveMessages() {
-        const compact = state.messages.slice(-30).map(compactMessage);
-        localStorage.setItem("myai_messages", JSON.stringify(compact));
+        const active = getActiveConversation();
+        if (!active) return;
+        active.messages = state.messages.slice(-MAX_MESSAGES_PER_CONVERSATION).map(compactMessage).filter(Boolean);
+        active.updatedAt = Date.now();
+        const title = buildConversationTitle(state.messages);
+        if (title) active.title = title;
+
+        state.conversations = sortConversations(state.conversations).slice(0, MAX_CONVERSATION_COUNT);
+        persistConversationsToCookie();
+        renderHistoryList();
       }
 
       function compactMessage(msg) {
@@ -1732,10 +1739,44 @@
       }
 
       function restoreMessages() {
+        const restored = readConversationsFromCookie();
+        if (restored.length) {
+          state.conversations = sortConversations(restored).slice(0, MAX_CONVERSATION_COUNT);
+        } else {
+          state.conversations = restoreLegacyConversation();
+        }
+
+        if (!state.conversations.length) {
+          state.conversations = [
+            {
+              id: createConversationId(),
+              title: "新会话",
+              updatedAt: Date.now(),
+              messages: [],
+            },
+          ];
+        }
+
+        const preferredId = getCookie(COOKIE_ACTIVE_CHAT);
+        const active =
+          state.conversations.find((c) => c.id === preferredId) ||
+          state.conversations.find((c) => Array.isArray(c.messages) && c.messages.length) ||
+          state.conversations[0];
+        state.activeConversationId = active.id;
+        state.messages = (active.messages || [])
+          .map((m) => ({
+            role: m.role === "assistant" ? "assistant" : "user",
+            content: normalizeMessageContent(m.content),
+          }))
+          .filter(Boolean);
+        persistConversationsToCookie();
+      }
+
+      function restoreLegacyConversation() {
         try {
           const v = localStorage.getItem("myai_messages");
           const parsed = v ? JSON.parse(v) : [];
-          state.messages = Array.isArray(parsed)
+          const messages = Array.isArray(parsed)
             ? parsed
                 .map((m) => {
                   if (!m || typeof m !== "object") return null;
@@ -1746,9 +1787,224 @@
                 })
                 .filter(Boolean)
             : [];
+          localStorage.removeItem("myai_messages");
+          if (!messages.length) return [];
+          return [
+            {
+              id: createConversationId(),
+              title: buildConversationTitle(messages) || "历史会话",
+              updatedAt: Date.now(),
+              messages: messages.map(compactMessage).filter(Boolean),
+            },
+          ];
         } catch {
-          state.messages = [];
+          return [];
         }
+      }
+
+      function readConversationsFromCookie() {
+        try {
+          const raw = getCookie(COOKIE_CHAT_HISTORY);
+          const parsed = raw ? JSON.parse(raw) : [];
+          if (!Array.isArray(parsed)) return [];
+          return parsed
+            .map((item) => {
+              if (!item || typeof item !== "object") return null;
+              const messages = Array.isArray(item.messages)
+                ? item.messages
+                    .map((m) => {
+                      if (!m || typeof m !== "object") return null;
+                      return {
+                        role: m.role === "assistant" ? "assistant" : "user",
+                        content: compactContent(m.content),
+                      };
+                    })
+                    .filter(Boolean)
+                    .slice(-MAX_MESSAGES_PER_CONVERSATION)
+                : [];
+              return {
+                id: typeof item.id === "string" && item.id.trim() ? item.id : createConversationId(),
+                title: truncate(String(item.title || "新会话"), 28),
+                updatedAt: Number(item.updatedAt) > 0 ? Number(item.updatedAt) : Date.now(),
+                messages,
+              };
+            })
+            .filter(Boolean);
+        } catch {
+          return [];
+        }
+      }
+
+      function persistConversationsToCookie() {
+        const trimmed = trimConversationsForCookie(state.conversations);
+        state.conversations = sortConversations(trimmed).slice(0, MAX_CONVERSATION_COUNT);
+
+        if (!state.conversations.length) return;
+        if (!state.conversations.some((c) => c.id === state.activeConversationId)) {
+          state.activeConversationId = state.conversations[0].id;
+          const active = state.conversations[0];
+          state.messages = (active.messages || [])
+            .map((m) => ({
+              role: m.role === "assistant" ? "assistant" : "user",
+              content: normalizeMessageContent(m.content),
+            }))
+            .filter(Boolean);
+        }
+
+        setCookie(COOKIE_CHAT_HISTORY, JSON.stringify(state.conversations), 30);
+        setCookie(COOKIE_ACTIVE_CHAT, state.activeConversationId, 30);
+      }
+
+      function trimConversationsForCookie(conversations) {
+        let list = sortConversations(
+          (Array.isArray(conversations) ? conversations : [])
+            .map((c) => ({
+              id: typeof c.id === "string" && c.id.trim() ? c.id : createConversationId(),
+              title: truncate(String(c.title || "新会话"), 28),
+              updatedAt: Number(c.updatedAt) > 0 ? Number(c.updatedAt) : Date.now(),
+              messages: (Array.isArray(c.messages) ? c.messages : [])
+                .slice(-MAX_MESSAGES_PER_CONVERSATION)
+                .map(compactMessage)
+                .filter(Boolean),
+            }))
+            .filter(Boolean)
+        ).slice(0, MAX_CONVERSATION_COUNT);
+
+        if (!list.length) {
+          list = [{ id: createConversationId(), title: "新会话", updatedAt: Date.now(), messages: [] }];
+        }
+
+        while (encodeURIComponent(JSON.stringify(list)).length > COOKIE_MAX_BYTES) {
+          let shrunk = false;
+          for (let i = list.length - 1; i >= 0; i -= 1) {
+            if (list[i].messages.length > 1) {
+              list[i].messages.shift();
+              shrunk = true;
+            }
+          }
+          if (shrunk) continue;
+
+          if (list.length > 1) {
+            list.pop();
+            continue;
+          }
+
+          const only = list[0];
+          if (only.messages.length === 1 && typeof only.messages[0]?.content === "string") {
+            only.messages[0].content = truncate(only.messages[0].content, 120);
+            break;
+          }
+          if (only.messages.length > 1) {
+            only.messages = only.messages.slice(-1);
+            continue;
+          }
+          break;
+        }
+
+        return list;
+      }
+
+      function getActiveConversation() {
+        return state.conversations.find((c) => c.id === state.activeConversationId) || null;
+      }
+
+      function renderHistoryList() {
+        els.historyList.innerHTML = "";
+
+        if (!state.conversations.length) {
+          const hint = document.createElement("div");
+          hint.className = "hint";
+          hint.textContent = "暂无会话。";
+          els.historyList.appendChild(hint);
+          return;
+        }
+
+        for (const conv of sortConversations(state.conversations)) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "history-item";
+          if (conv.id === state.activeConversationId) btn.classList.add("active");
+          btn.dataset.conversationId = conv.id;
+
+          const title = document.createElement("div");
+          title.className = "history-title";
+          title.textContent = conv.title || "新会话";
+
+          const meta = document.createElement("div");
+          meta.className = "history-meta";
+          const preview = document.createElement("span");
+          preview.textContent = conversationPreview(conv);
+          const time = document.createElement("span");
+          time.textContent = formatConversationTime(conv.updatedAt);
+          meta.appendChild(preview);
+          meta.appendChild(time);
+
+          btn.appendChild(title);
+          btn.appendChild(meta);
+          els.historyList.appendChild(btn);
+        }
+      }
+
+      function buildConversationTitle(messages) {
+        const firstUser = (Array.isArray(messages) ? messages : []).find((m) => m?.role === "user");
+        if (!firstUser) return "";
+        const text = flattenContentToText(firstUser.content).replace(/\s+/g, " ").trim();
+        return truncate(text || "新会话", 28);
+      }
+
+      function conversationPreview(conv) {
+        const msgs = Array.isArray(conv?.messages) ? conv.messages : [];
+        if (!msgs.length) return "空会话";
+        const last = msgs[msgs.length - 1];
+        const text = flattenContentToText(last.content).replace(/\s+/g, " ").trim();
+        return truncate(text || "无文本内容", 18);
+      }
+
+      function flattenContentToText(content) {
+        if (typeof content === "string") return content;
+        if (!Array.isArray(content)) return stringifyUnknown(content);
+        return content
+          .map((part) => {
+            if (typeof part === "string") return part;
+            if (!part || typeof part !== "object") return "";
+            if (typeof part.text === "string") return part.text;
+            return "";
+          })
+          .join(" ");
+      }
+
+      function formatConversationTime(ts) {
+        const t = Number(ts);
+        if (!Number.isFinite(t) || t <= 0) return "--";
+        return new Date(t).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+      }
+
+      function createConversationId() {
+        return `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      }
+
+      function sortConversations(list) {
+        return [...(Array.isArray(list) ? list : [])].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+      }
+
+      function getCookie(name) {
+        const key = `${name}=`;
+        const chunks = String(document.cookie || "").split("; ");
+        for (const chunk of chunks) {
+          if (chunk.startsWith(key)) {
+            try {
+              return decodeURIComponent(chunk.slice(key.length));
+            } catch {
+              return chunk.slice(key.length);
+            }
+          }
+        }
+        return "";
+      }
+
+      function setCookie(name, value, days) {
+        const maxAge = Math.max(1, Math.floor(Number(days || 30) * 24 * 60 * 60));
+        document.cookie = `${name}=${encodeURIComponent(value || "")}; path=/; max-age=${maxAge}; SameSite=Lax`;
       }
 
       function pendingTotalSize() {
